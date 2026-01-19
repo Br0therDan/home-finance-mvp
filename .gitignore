@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+env/
+venv/
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+
+# Pytest
+.pytest_cache/
+
+# Mypy
+.mypy_cache/
+
+# OS files
+.DS_Store
+
+# SQLite database files (local data)
+data/*.db
+data/*.db-journal
+
+# Streamlit
+.streamlit/
+
+# Editor backups
+*~
+.~*
