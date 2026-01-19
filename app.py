@@ -17,6 +17,24 @@ def main():
     st.title("Home Finance MVP")
     st.caption("Streamlit + SQLite 기반 가정용 자산/기장 관리 MVP")
 
+    # Sidebar: Display Currency Settings
+    from core.services.settings_service import get_base_currency
+
+    base_cur = get_base_currency(conn)
+
+    st.sidebar.header("표시 통화 설정")
+    display_currency = st.sidebar.selectbox(
+        "표시 통화 선택",
+        options=["KRW", "USD", "JPY", "EUR"],
+        index=(
+            ["KRW", "USD", "JPY", "EUR"].index(base_cur)
+            if base_cur in ["KRW", "USD", "JPY", "EUR"]
+            else 0
+        ),
+        key="display_currency_selector",
+    )
+    st.session_state["display_currency"] = display_currency
+
     st.markdown(
         """
 이 앱은 **가계부 입력 UX**를 제공하면서, 내부적으로는 **복식부기 원장(Journal)**을 저장하여

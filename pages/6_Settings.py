@@ -153,7 +153,31 @@ conn = get_connection()
 apply_migrations(conn)
 
 st.title("설정")
-st.caption("계정과목(CoA) 관리")
+st.caption("시스템 전역 설정 및 계정과목(CoA) 관리")
+
+# --- App Settings Section ---
+from core.services.settings_service import get_base_currency, set_base_currency
+
+current_base = get_base_currency(conn)
+
+with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
+    new_base = st.selectbox(
+        "기준 통화 (Base Currency)",
+        options=["KRW", "USD", "JPY", "EUR"],
+        index=(
+            ["KRW", "USD", "JPY", "EUR"].index(current_base)
+            if current_base in ["KRW", "USD", "JPY", "EUR"]
+            else 0
+        ),
+        help="모든 장부의 기본 집계 기준이 되는 통화입니다. 변경 시 주의하세요.",
+    )
+    if new_base != current_base:
+        if st.button("기준 통화 업데이트"):
+            set_base_currency(conn, new_base)
+            st.success(f"기준 통화가 {new_base}로 변경되었습니다.")
+            st.rerun()
+
+st.divider()
 
 if AgGrid is None:
     st.error("AgGrid UI가 설치되어 있지 않습니다. `uv sync`를 실행해 주세요.")
