@@ -1,0 +1,187 @@
+# Home Finance MVP (Streamlit + SQLite)
+
+가정에서 사용하는 **재무/자산관리 툴 MVP**.
+
+- **입력은 가계부 UX** (지출/수입/이체)
+- **저장은 복식부기 원장(Journal)**
+- 자동으로 **시산표 / 재무상태표(BS) / 손익계산서(IS)** 생성
+- **자산대장(유/무형) + 평가(valuation) 이력** 관리
+
+> 철학: “가계부처럼 쉽게 입력하고, 회계처럼 보고한다.”
+
+---
+
+## 1) 주요 기능
+
+### 거래 입력 (가계부 UI)
+- 지출(Expense)
+- 수입(Income)
+- 이체(Transfer)
+
+입력 → 자동 분개 생성(대차평형 검증).
+
+**자동 분개 규칙**
+- 지출: (차) 비용계정 / (대) 결제계정(현금·예금·카드부채)
+- 수입: (차) 입금계정(현금·예금) / (대) 수익계정
+- 이체: (차) to(자산) / (대) from(자산)
+
+카드 결제는 결제계정을 `카드미지급금`(LIABILITY)으로 선택하면 된다.
+
+### 원장 / 시산표
+- 전표 헤더(journal_entries) 목록
+- 전표 라인(journal_lines) 목록
+- Trial Balance(계정별 차/대 집계)
+
+### 리포트
+- 재무상태표(BS)
+- 손익계산서(IS)
+- 월별 현금변화(간단 cashflow proxy)
+
+### 자산대장
+- 자산 등록(유/무형)
+- 평가(valuation) 추가 및 이력 조회
+
+---
+
+## 2) 스택
+
+- UI: Streamlit
+- DB: SQLite (WAL)
+- DataFrame: pandas
+
+---
+
+## 3) 실행 방법
+
+### 사전 준비
+- Python 3.10+
+
+### 설치 & 실행
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+streamlit run app.py
+```
+
+최초 실행 시 자동으로:
+- `data/app.db` 생성
+- `migrations/*.sql` 적용
+- 기본 계정과목(CoA) Seed 삽입
+
+---
+
+## 4) 프로젝트 구조
+
+```
+home-finance-mvp/
+  app.py
+  pages/
+    1_Dashboard.py
+    2_Transactions.py
+    3_Assets.py
+    4_Ledger.py
+    5_Reports.py
+    6_Settings.py
+  core/
+    db.py
+    models.py
+    services/
+      ledger_service.py
+      asset_service.py
+    ui/
+      formatting.py
+  migrations/
+    001_init_schema.sql
+    002_seed_accounts.sql
+  data/
+    app.db (자동 생성)
+  requirements.txt
+```
+
+---
+
+## 5) 데이터 모델(요약)
+
+### accounts (계정과목)
+- id
+- name
+- type: ASSET / LIABILITY / EQUITY / INCOME / EXPENSE
+- parent_id (계층형 확장 용)
+- is_active
+
+### journal_entries (전표 헤더)
+- id
+- entry_date
+- description
+- source
+
+### journal_lines (전표 라인)
+- entry_id
+- account_id
+- debit
+- credit
+
+> **검증 규칙**
+> - 한 전표의 debit 합 = credit 합 (대차평형)
+> - 한 라인은 debit/credit 둘 중 하나만 허용
+
+### assets (자산대장)
+- name, asset_class
+- linked_account_id (회계 반영용 연결 계정)
+- acquisition_cost
+
+### valuations (평가 이력)
+- asset_id
+- valuation_date
+- value
+- method
+
+---
+
+## 6) 재무제표 계산 방식
+
+### Raw Balance
+각 계정의 raw balance:
+- `SUM(debit - credit)`
+
+### BS 표시(단순화)
+- 자산(ASSET): raw balance가 대체로 +
+- 부채/자본(LIABILITY/EQUITY): raw balance가 대체로 -
+
+표시용으로:
+- liabilities/equity는 `-raw_balance`로 양수화
+
+`balanced_gap = assets - (liabilities + equity)`
+
+> 가정용 MVP라서 표시 규칙은 단순화했다.
+> (회계 실무의 정상잔액 표기까지 완벽히 재현하려면 계정별 normal-side를 강제해야 함)
+
+---
+
+## 7) 사용 팁
+
+### 카드 결제
+1) 거래 입력 → 지출
+2) 결제 계정: `카드미지급금`
+
+### 카드 대금 납부
+- 이체(Transfer)로 “보통예금 → 카드미지급금”은 현재 UX에서 직접 지원하지 않는다.
+- MVP 단계에서는 `원장` 페이지에서 수동 전표를 만들지 않으므로, 다음 라운드에서 **카드 납부 워크플로우**를 추가하는 게 좋다.
+
+---
+
+## 8) 다음 확장(추천)
+
+- 카드 워크플로우: 카드사용/납부/할부
+- 자산 처분/매각 손익 자동 분개
+- 카테고리(가계부) ↔ 계정과목(CoA) 매핑 룰 엔진
+- CSV Import/Export (은행/카드 사용내역)
+- 다중 통화, 월말 마감(Closing)
+
+---
+
+## License
+개인 사용 목적 MVP 샘플.

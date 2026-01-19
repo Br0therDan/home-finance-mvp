@@ -1,0 +1,80 @@
+[project]
+name = "home-finance-mvp"
+version = "0.1.0"
+description = "Streamlit + SQLite household finance & asset manager (MVP)"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.31.0",
+    "pandas>=2.0.0",
+    "watchdog>=6.0.0",
+]
+
+
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+
+[dependency-groups]
+dev = [
+    "ruff>=0.5.0",
+    "mypy>=1.10.0",
+    "pytest>=8.0.0",
+    "types-requests>=2.32.0",
+    "types-PyYAML>=6.0.12",
+    "pandas-stubs>=2.2.0",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "A",   # flake8-builtins
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "ARG", # flake8-unused-arguments
+    "PT",  # flake8-pytest-style
+]
+ignore = ["E501", "N806", "N803", "B008", "E402", "SIM117", "SIM102", "ARG001", "ARG004", "PT011"] # Line too long, ML vars, Typer/Path patch, Streamlit nesting, unused args, pytest noise
+
+[tool.ruff.lint.isort]
+known-first-party = ["quant"]
+
+[tool.mypy]
+python_version = "3.11"
+mypy_path = "src"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+ignore_missing_imports = true
+disable_error_code = [
+    "arg-type",
+    "assignment",
+    "attr-defined",
+    "union-attr",
+    "no-any-return",
+    "call-overload",
+    "str-bytes-safe",
+    "return-value",
+    "dict-item",
+    "var-annotated",
+    "index"
+]
+
+[[tool.mypy.overrides]]
+module = "pandas.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
