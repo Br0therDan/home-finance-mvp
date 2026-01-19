@@ -15,7 +15,9 @@ def _validate_entry(lines: List[JournalLine]) -> None:
     total_credit = sum(max(0.0, float(l.credit)) for l in lines)
 
     if round(total_debit, 2) != round(total_credit, 2):
-        raise ValueError(f"Unbalanced entry: debit={total_debit:.2f}, credit={total_credit:.2f}")
+        raise ValueError(
+            f"Unbalanced entry: debit={total_debit:.2f}, credit={total_credit:.2f}"
+        )
 
     for l in lines:
         if l.debit < 0 or l.credit < 0:
@@ -69,7 +71,102 @@ def get_account(conn: sqlite3.Connection, account_id: int):
     ).fetchone()
 
 
-def account_balances(conn: sqlite3.Connection, as_of: date | None = None) -> Dict[int, float]:
+def get_account_by_name(conn: sqlite3.Connection, name: str, type_: str | None = None):
+    if type_:
+        return conn.execute(
+            "SELECT id, name, type FROM accounts WHERE name=? AND type=?",
+            (name, type_),
+        ).fetchone()
+    return conn.execute(
+        "SELECT id, name, type FROM accounts WHERE name=?",
+        (name,),
+    ).fetchone()
+
+
+def has_opening_balance_entry(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT COUNT(1) AS cnt FROM journal_entries WHERE source = ?",
+        ("opening_balance",),
+    ).fetchone()
+    return int(row["cnt"] or 0) > 0
+
+
+def create_opening_balance_entry(
+    conn: sqlite3.Connection,
+    entry_date: date,
+    description: str,
+    asset_lines: List[JournalLine],
+    liability_lines: List[JournalLine],
+) -> int:
+    if has_opening_balance_entry(conn):
+        raise ValueError("OPENING_BALANCE entry already exists.")
+
+    lines: List[JournalLine] = []
+    for l in asset_lines:
+        if l.debit < 0 or l.credit < 0:
+            raise ValueError("Amount cannot be negative.")
+        if l.debit > 0:
+            lines.append(
+                JournalLine(
+                    account_id=l.account_id, debit=l.debit, credit=0.0, memo=l.memo
+                )
+            )
+
+    for l in liability_lines:
+        if l.debit < 0 or l.credit < 0:
+            raise ValueError("Amount cannot be negative.")
+        if l.credit > 0:
+            lines.append(
+                JournalLine(
+                    account_id=l.account_id, debit=0.0, credit=l.credit, memo=l.memo
+                )
+            )
+
+    if not lines:
+        raise ValueError("At least one opening balance line is required.")
+
+    total_debit = sum(float(l.debit) for l in lines)
+    total_credit = sum(float(l.credit) for l in lines)
+
+    equity = get_account_by_name(conn, "기초순자산", "EQUITY")
+    if equity is None:
+        equity = get_account_by_name(conn, "기초자본(Opening Balance)", "EQUITY")
+    if equity is None:
+        raise ValueError("Opening equity account not found.")
+
+    gap = total_debit - total_credit
+    if abs(gap) > 1e-9:
+        if gap > 0:
+            lines.append(
+                JournalLine(
+                    account_id=int(equity["id"]),
+                    debit=0.0,
+                    credit=float(gap),
+                    memo=description,
+                )
+            )
+        else:
+            lines.append(
+                JournalLine(
+                    account_id=int(equity["id"]),
+                    debit=float(-gap),
+                    credit=0.0,
+                    memo=description,
+                )
+            )
+
+    entry = JournalEntryInput(
+        entry_date=entry_date,
+        description=description,
+        source="opening_balance",
+        lines=lines,
+    )
+    return create_journal_entry(conn, entry)
+
+
+def account_balances(
+    conn: sqlite3.Connection, as_of: date | None = None
+) -> Dict[int, float]:
     """Return raw balance = sum(debit - credit) per account."""
     params: List = []
     where = ""

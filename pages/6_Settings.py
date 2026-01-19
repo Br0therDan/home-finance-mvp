@@ -23,14 +23,25 @@ df = fetch_df(
     """,
 )
 
-st.dataframe(df, use_container_width=True, hide_index=True)
+display_df = df.rename(
+    columns={
+        "id": "계정ID",
+        "name": "계정명",
+        "type": "계정유형",
+        "parent_id": "상위계정ID",
+        "is_active": "활성",
+    }
+)
+st.dataframe(display_df, width="stretch", hide_index=True)
 
 st.divider()
 
 st.subheader("계정과목 추가")
 with st.form("add_account", clear_on_submit=True):
     name = st.text_input("계정명")
-    type_ = st.selectbox("계정 타입", ["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"])
+    type_ = st.selectbox(
+        "계정 타입", ["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]
+    )
     parent_id = st.number_input("상위 계정 ID(없으면 0)", min_value=0, value=0, step=1)
     is_active = st.checkbox("활성", value=True)
 

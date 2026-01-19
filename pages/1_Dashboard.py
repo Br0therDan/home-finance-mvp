@@ -37,13 +37,13 @@ eq_df = pd.DataFrame(bs["equity"], columns=["계정", "금액"])
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown("**자산**")
-    st.dataframe(assets_df, use_container_width=True, hide_index=True)
+    st.dataframe(assets_df, width="stretch", hide_index=True)
 with c2:
     st.markdown("**부채**")
-    st.dataframe(liab_df, use_container_width=True, hide_index=True)
+    st.dataframe(liab_df, width="stretch", hide_index=True)
 with c3:
     st.markdown("**자본**")
-    st.dataframe(eq_df, use_container_width=True, hide_index=True)
+    st.dataframe(eq_df, width="stretch", hide_index=True)
 
 st.divider()
 
@@ -63,7 +63,7 @@ expense_df = pd.DataFrame(is_["expense"], columns=["계정", "금액"])
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("**수익(Income)**")
-    st.dataframe(income_df, use_container_width=True, hide_index=True)
+    st.dataframe(income_df, width="stretch", hide_index=True)
 with c2:
     st.markdown("**비용(Expense)**")
-    st.dataframe(expense_df, use_container_width=True, hide_index=True)
+    st.dataframe(expense_df, width="stretch", hide_index=True)

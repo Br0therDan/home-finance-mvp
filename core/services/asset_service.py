@@ -35,6 +35,7 @@ def list_assets(conn: sqlite3.Connection):
     return conn.execute(
         """
         SELECT a.id, a.name, a.asset_class, a.acquisition_date, a.acquisition_cost,
+               a.linked_account_id,
                acc.name AS linked_account
         FROM assets a
         JOIN accounts acc ON acc.id = a.linked_account_id
@@ -44,7 +45,13 @@ def list_assets(conn: sqlite3.Connection):
     ).fetchall()
 
 
-def add_valuation(conn: sqlite3.Connection, asset_id: int, v_date: date, value: float, method: str = "manual") -> int:
+def add_valuation(
+    conn: sqlite3.Connection,
+    asset_id: int,
+    v_date: date,
+    value: float,
+    method: str = "manual",
+) -> int:
     with conn:
         cur = conn.execute(
             """

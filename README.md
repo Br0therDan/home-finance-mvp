@@ -41,6 +41,11 @@
 - 자산 등록(유/무형)
 - 평가(valuation) 추가 및 이력 조회
 
+### Day0 기초 잔액 설정
+- 과거 거래를 복원하지 않고 **오늘 기준 스냅샷**을 1회 입력
+- `OPENING_BALANCE` 전표 1장만 생성
+- 이후 모든 변화는 **Transactions(원장 분개)** 로만 누적
+
 ---
 
 ## 2) 스택
@@ -79,6 +84,7 @@ streamlit run app.py
 home-finance-mvp/
   app.py
   pages/
+    0_Opening_Balance.py
     1_Dashboard.py
     2_Transactions.py
     3_Assets.py
@@ -96,6 +102,7 @@ home-finance-mvp/
   migrations/
     001_init_schema.sql
     002_seed_accounts.sql
+    003_add_opening_balance_accounts.sql
   data/
     app.db (자동 생성)
   requirements.txt
@@ -162,6 +169,13 @@ home-finance-mvp/
 ---
 
 ## 7) 사용 팁
+
+### Day0 시작 방식
+1) 좌측 사이드바에서 **Day0 기초 잔액 설정** 페이지로 이동
+2) 자산/부채 잔액을 입력하고 **OPENING_BALANCE 전표**를 생성
+3) 대시보드/리포트는 즉시 Day0 스냅샷 기준으로 집계됨
+
+> 주의: OPENING_BALANCE 전표는 **1회만 생성** 가능 (재생성 기본 차단)
 
 ### 카드 결제
 1) 거래 입력 → 지출

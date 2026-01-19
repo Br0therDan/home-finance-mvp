@@ -13,7 +13,7 @@ from core.services.asset_service import (
     list_assets,
     valuation_history,
 )
-from core.services.ledger_service import list_accounts
+from core.services.ledger_service import account_balances, list_accounts
 
 st.set_page_config(page_title="Assets", page_icon="🏠", layout="wide")
 
@@ -31,11 +31,25 @@ with st.expander("자산 등록", expanded=True):
         name = st.text_input("자산명", value="")
         asset_class = st.selectbox(
             "자산 분류",
-            ["CASH", "BANK", "STOCK", "CRYPTO", "REAL_ESTATE", "VEHICLE", "EQUIPMENT", "INTANGIBLE", "OTHER"],
+            [
+                "CASH",
+                "BANK",
+                "STOCK",
+                "CRYPTO",
+                "REAL_ESTATE",
+                "VEHICLE",
+                "EQUIPMENT",
+                "INTANGIBLE",
+                "OTHER",
+            ],
         )
-        linked = st.selectbox("연결 계정(회계 반영용)", options=asset_accounts, format_func=lambda x: x[1])
+        linked = st.selectbox(
+            "연결 계정(회계 반영용)", options=asset_accounts, format_func=lambda x: x[1]
+        )
         acq_date = st.date_input("취득일", value=date.today())
-        acq_cost = st.number_input("취득가(원가)", min_value=0.0, value=0.0, step=10000.0)
+        acq_cost = st.number_input(
+            "취득가(원가)", min_value=0.0, value=0.0, step=10000.0
+        )
         note = st.text_area("메모", value="")
 
         submitted = st.form_submit_button("등록")
@@ -60,9 +74,12 @@ with st.expander("자산 등록", expanded=True):
 st.divider()
 
 assets = list_assets(conn)
+ledger_balances = account_balances(conn)
 rows = []
 for a in assets:
     lv = latest_valuation(conn, int(a["id"]))
+    linked_account_id = int(a["linked_account_id"])
+    is_ledger_based = linked_account_id in ledger_balances
     rows.append(
         {
             "id": int(a["id"]),
@@ -73,13 +90,18 @@ for a in assets:
             "최근평가": float(lv["value"]) if lv else None,
             "평가일": lv["valuation_date"] if lv else None,
             "연결계정": a["linked_account"],
+            "구분": "원장기반" if is_ledger_based else "인벤토리",
+            "원장잔액": float(ledger_balances.get(linked_account_id, 0.0)),
         }
     )
 
 df = pd.DataFrame(rows)
 
 st.subheader("자산 목록")
-st.dataframe(df, use_container_width=True, hide_index=True)
+st.dataframe(df, width="stretch", hide_index=True)
+st.caption(
+    "구분: 원장기반은 해당 계정에 분개가 존재하는 자산, 인벤토리는 원장 반영이 없는 자산."
+)
 
 st.divider()
 
@@ -95,15 +117,36 @@ else:
         submitted = st.form_submit_button("저장")
 
         if submitted:
-            try:
-                vid = add_valuation(conn, int(selected_id), v_date=v_date, value=float(value), method=method)
-                st.success(f"평가 저장 완료: #{vid}")
-            except Exception as e:
-                st.error(str(e))
+            if selected_id is None:
+                st.error("자산을 선택해 주세요.")
+            else:
+                try:
+                    aid = (
+                        int(selected_id)
+                        if not isinstance(selected_id, int)
+                        else selected_id
+                    )
+                    vid = add_valuation(
+                        conn, aid, v_date=v_date, value=float(value), method=method
+                    )
+                    st.success(f"평가 저장 완료: #{vid}")
+                except Exception as e:
+                    st.error(str(e))
 
     st.markdown("**평가 이력**")
-    hist = valuation_history(conn, int(selected_id))
+    if selected_id is None:
+        hist = []
+    else:
+        aid = int(selected_id) if not isinstance(selected_id, int) else selected_id
+        hist = valuation_history(conn, int(aid))
     hist_df = pd.DataFrame(
-        [{"평가일": r["valuation_date"], "금액": float(r["value"]), "방식": r["method"]} for r in hist]
+        [
+            {
+                "평가일": r["valuation_date"],
+                "금액": float(r["value"]),
+                "방식": r["method"],
+            }
+            for r in hist
+        ]
     )
-    st.dataframe(hist_df, use_container_width=True, hide_index=True)
+    st.dataframe(hist_df, width="stretch", hide_index=True)

@@ -33,7 +33,15 @@ entries = fetch_df(
     params=(start.isoformat(), end.isoformat()),
 )
 
-st.dataframe(entries, use_container_width=True, hide_index=True)
+display_entries = entries.rename(
+    columns={
+        "id": "전표ID",
+        "entry_date": "날짜",
+        "description": "설명",
+        "source": "출처",
+    }
+)
+st.dataframe(display_entries, width="stretch", hide_index=True)
 
 st.subheader("전표 라인")
 lines = fetch_df(
@@ -51,7 +59,19 @@ lines = fetch_df(
     params=(start.isoformat(), end.isoformat()),
 )
 
-st.dataframe(lines, use_container_width=True, hide_index=True)
+display_lines = lines.rename(
+    columns={
+        "entry_date": "날짜",
+        "entry_id": "전표ID",
+        "description": "설명",
+        "account": "계정",
+        "type": "계정유형",
+        "debit": "차변",
+        "credit": "대변",
+        "memo": "메모",
+    }
+)
+st.dataframe(display_lines, width="stretch", hide_index=True)
 
 st.divider()
 
@@ -66,6 +86,13 @@ show_zero = st.checkbox("0 잔액 계정도 표시", value=False)
 if not show_zero:
     tb_df = tb_df[(tb_df["debit"].abs() > 1e-9) | (tb_df["credit"].abs() > 1e-9)]
 
-st.dataframe(tb_df[["account", "type", "debit", "credit"]], use_container_width=True, hide_index=True)
+tb_display = tb_df.rename(
+    columns={"account": "계정", "type": "유형", "debit": "차변", "credit": "대변"}
+)
+st.dataframe(
+    tb_display[["계정", "유형", "차변", "대변"]],
+    width="stretch",
+    hide_index=True,
+)
 
 st.caption("debit/credit은 raw_balance를 기준으로 양/음수 분리 표시한 값이다.")
