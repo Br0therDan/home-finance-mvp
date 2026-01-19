@@ -172,7 +172,9 @@ def create_opening_balance_entry(
     total_debit = sum(line.debit for line in lines)
     total_credit = sum(line.credit for line in lines)
 
-    equity = get_account_by_name(session, "기초순자산", "EQUITY")
+    equity = get_account_by_name(session, "기초순자산(Opening Equity)", "EQUITY")
+    if equity is None:
+        equity = get_account_by_name(session, "기초순자산", "EQUITY")
     if equity is None:
         equity = get_account_by_name(session, "기초자본(Opening Balance)", "EQUITY")
     if equity is None:

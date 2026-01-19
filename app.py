@@ -1,10 +1,13 @@
 import streamlit as st
 from sqlmodel import Session
 
-from core.db import engine
+from core.db import engine, run_migrations
 
 
 def main():
+    # Run migrations on startup
+    run_migrations()
+
     st.set_page_config(
         page_title="Home Finance MVP",
         page_icon="💼",

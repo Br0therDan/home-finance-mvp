@@ -40,14 +40,10 @@ class JournalLine(SQLModel, table=True):
     native_currency: str | None = Field(default=None)
     fx_rate: float | None = Field(default=None)
 
-    entry: "core.models.JournalEntry" = Relationship(
-        sa_relationship_kwargs={
-            "back_populates": "lines",
-        },
-    )
+    entry: "JournalEntry" = Relationship(back_populates="lines")
 
     # Unidirectional relationship to Account (no back_populates on Account)
-    account: "core.models.Account" = Relationship()
+    account: "Account" = Relationship()
 
 
 class JournalEntry(SQLModel, table=True):
@@ -60,11 +56,8 @@ class JournalEntry(SQLModel, table=True):
     source: str = Field(default="manual")
     created_at: datetime = Field(default_factory=datetime.now)
 
-    lines: list["core.models.JournalLine"] = Relationship(
-        sa_relationship_kwargs={
-            "back_populates": "entry",
-            "cascade": "all, delete-orphan",
-        }
+    lines: list["JournalLine"] = Relationship(
+        back_populates="entry", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
 
@@ -82,13 +75,10 @@ class Asset(SQLModel, table=True):
     note: str = Field(default="")
 
     # Unidirectional relationship to Account (no back_populates on Account)
-    linked_account: "core.models.Account" = Relationship()
+    linked_account: "Account" = Relationship()
 
-    valuations: list["core.models.AssetValuation"] = Relationship(
-        sa_relationship_kwargs={
-            "back_populates": "asset",
-            "cascade": "all, delete-orphan",
-        }
+    valuations: list["AssetValuation"] = Relationship(
+        back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
 
@@ -106,9 +96,7 @@ class AssetValuation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    asset: "core.models.Asset" = Relationship(
-        sa_relationship_kwargs={"back_populates": "valuations"}
-    )
+    asset: "Asset" = Relationship(back_populates="valuations")
 
 
 class JournalEntryInput(BaseModel):

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
-from datetime import date
+import json
+from datetime import date, datetime
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
@@ -16,13 +16,104 @@ from core.services.ledger_service import (
     list_accounts,
     list_posting_accounts,
 )
+from core.services.account_service import create_user_account
+import time
 
 st.set_page_config(page_title="Day0 Setup", page_icon="🧭", layout="wide")
 
 # DB Session
 session = Session(engine)
 
+DRAFT_PATH = Path("data/day0_draft.json")
+
+
+def load_draft():
+    if not DRAFT_PATH.exists():
+        st.error("임시 저장된 데이터가 없습니다.")
+        return
+
+    try:
+        with open(DRAFT_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        st.session_state.asset_rows = data.get("asset_rows", 2)
+        st.session_state.liab_rows = data.get("liab_rows", 2)
+
+        # Restore Assets
+        for item in data.get("assets", []):
+            idx = item["index"]
+            # Find the account tuple that matches the ID
+            acc_id = item["account_id"]
+            matched = next((a for a in asset_accounts if a[0] == acc_id), None)
+            if matched:
+                st.session_state[f"asset_account_{idx}"] = matched
+            st.session_state[f"asset_amount_{idx}"] = item["amount"]
+
+        # Restore Liabilities
+        for item in data.get("liabilities", []):
+            idx = item["index"]
+            # Find the account tuple that matches the ID
+            acc_id = item["account_id"]
+            matched = next((a for a in liab_accounts if a[0] == acc_id), None)
+            if matched:
+                st.session_state[f"liab_account_{idx}"] = matched
+            st.session_state[f"liab_amount_{idx}"] = item["amount"]
+
+        st.toast("임시 저장된 데이터를 불러왔습니다.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"임시 저장 불러오기 실패: {e}")
+
+
+def save_draft():
+    data = {
+        "timestamp": datetime.now().isoformat(),
+        "asset_rows": st.session_state.asset_rows,
+        "liab_rows": st.session_state.liab_rows,
+        "assets": [],
+        "liabilities": [],
+    }
+
+    # Save Assets
+    for i in range(st.session_state.asset_rows):
+        account = st.session_state.get(f"asset_account_{i}")
+        amount = st.session_state.get(f"asset_amount_{i}", 0.0)
+        if account:
+            data["assets"].append(
+                {"index": i, "account_id": account[0], "amount": float(amount)}
+            )
+
+    # Save Liabilities
+    for i in range(st.session_state.liab_rows):
+        account = st.session_state.get(f"liab_account_{i}")
+        amount = st.session_state.get(f"liab_amount_{i}", 0.0)
+        if account:
+            data["liabilities"].append(
+                {"index": i, "account_id": account[0], "amount": float(amount)}
+            )
+
+    try:
+        DRAFT_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(DRAFT_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        st.toast("임시 저장되었습니다.")
+    except Exception as e:
+        st.error(f"임시 저장 실패: {e}")
+
+
 st.title("Day0 기초 잔액 설정")
+
+if DRAFT_PATH.exists():
+    try:
+        with open(DRAFT_PATH, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+            ts = meta.get("timestamp", "")[:16].replace("T", " ")
+        st.info(f"💾 임시 저장된 데이터가 있습니다. ({ts})")
+        if st.button("임시 저장 불러오기"):
+            load_draft()
+    except:
+        pass
+
 st.caption(
     "과거 거래 복원 없이 오늘 기준 기초자산/부채를 입력해 OPENING_BALANCE 전표를 생성합니다."
 )
@@ -37,15 +128,51 @@ liab_accounts = [
 ]
 
 if len(asset_accounts) == 0:
-    st.info("자산 하위(Posting) 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요.")
+    st.warning(
+        "⚠️ 등록된 자산/부채(Posting) 계정이 없습니다. 기초 설정을 위해 기본 계정을 생성하시겠습니까?"
+    )
+    col1, col2 = st.columns([1, 2])
+    with col1:
+        if st.button("네, 기본 계정 생성 (현금, 통장, 카드)", type="primary"):
+            try:
+                # 1. Cash (Parent: 1001 현금)
+                create_user_account(session, "현금 (기본)", "ASSET", 1001)
+                # 2. Checking (Parent: 1002 보통예금)
+                create_user_account(session, "급여통장", "ASSET", 1002)
+                # 3. Credit Card (Parent: 2001 카드미지급금)
+                create_user_account(session, "신용카드 (기본)", "LIABILITY", 2001)
+
+                session.commit()
+                st.success("기본 계정이 생성되었습니다! 새로고침합니다...")
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"계정 생성 실패: {e}")
+
+    st.info("또는 '설정 > 계정 관리' 메뉴에서 직접 계정을 생성할 수 있습니다.")
     st.stop()
 
-opening_equity = get_account_by_name(
-    session, "기초순자산", "EQUITY"
-) or get_account_by_name(session, "기초자본(Opening Balance)", "EQUITY")
+opening_equity = get_account_by_name(session, "기초순자산(Opening Equity)", "EQUITY")
+if opening_equity is None:
+    opening_equity = get_account_by_name(session, "기초순자산", "EQUITY")
+if opening_equity is None:
+    opening_equity = get_account_by_name(session, "기초자본(Opening Balance)", "EQUITY")
 
 if opening_equity is None:
     st.error("기초순자산(EQUITY) 계정이 없습니다. 마이그레이션을 먼저 적용하세요.")
+    st.stop()
+
+# Ensure the equity account is active
+if not opening_equity.get("is_active", True):
+    st.warning(
+        f"계정 '{opening_equity['name']}'이 비활성화 상태입니다. 기초 잔액 설정(Day0)을 진행하려면 이 계정이 활성화되어야 합니다."
+    )
+    if st.button("계정 활성화하기"):
+        from core.services.account_service import update_account
+
+        update_account(session, opening_equity["id"], is_active=True)
+        st.success(f"계정 '{opening_equity['name']}'이 활성화되었습니다.")
+        st.rerun()
     st.stop()
 
 if has_opening_balance_entry(session):
@@ -238,7 +365,16 @@ with st.form("opening_balance_form"):
     else:
         st.info("자산 또는 부채 라인을 입력하세요.")
 
-    submitted = st.form_submit_button("OPENING_BALANCE 생성")
+    cols = st.columns([1, 1])
+    with cols[0]:
+        submitted = st.form_submit_button("OPENING_BALANCE 생성", type="primary")
+    with cols[1]:
+        draft = st.form_submit_button("임시 저장")
+
+    if draft:
+        save_draft()
+        # Do not proceed to creation if saving draft
+
     if submitted:
         try:
             entry_id = create_opening_balance_entry(
@@ -249,5 +385,8 @@ with st.form("opening_balance_form"):
                 liability_lines=liability_lines,
             )
             st.success(f"OPENING_BALANCE 전표 생성 완료: #{entry_id}")
+            # draft cleanup (optional, but good UX)
+            if DRAFT_PATH.exists():
+                DRAFT_PATH.unlink()
         except Exception as e:
             st.error(str(e))

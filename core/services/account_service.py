@@ -40,18 +40,20 @@ def create_user_account(
         raise ValueError("상위 계정을 선택해야 합니다.")
     if parent.type != type_:
         raise ValueError("상위 계정의 타입과 동일해야 합니다.")
-    if not parent.is_system or parent.level != 1:
-        raise ValueError("상위 계정은 시스템(Level 1) 계정이어야 합니다.")
+    if parent.type != type_:
+        raise ValueError("상위 계정의 타입과 동일해야 합니다.")
 
+    # Auto-manage: Parent becomes aggregate (allow_posting=False) if it was a leaf
     if parent.allow_posting:
-        raise ValueError("상위(집계) 계정만 선택할 수 있습니다.")
+        parent.allow_posting = False
+        session.add(parent)
 
     level = parent.level + 1
 
-    # Calculate next 4-digit ID
+    # Calculate next 6-digit ID (parent_id * 100 + sequence)
     parent_id_int = parent.id
-    range_min = parent_id_int + 1
-    range_max = parent_id_int + 99
+    range_min = parent_id_int * 100 + 1
+    range_max = parent_id_int * 100 + 99
 
     # Max ID query
     statement = select(func.max(Account.id)).where(
@@ -98,10 +100,7 @@ def update_user_account(
 
     if account is None:
         raise ValueError("계정을 찾을 수 없습니다.")
-    if account.is_system:
-        raise ValueError("시스템 계정은 수정할 수 없습니다.")
-    if not account.allow_posting:
-        raise ValueError("집계 계정은 수정할 수 없습니다.")
+    # Removed system/posting restrictions for maximum flexibility
 
     account.name = name.strip()
     account.is_active = is_active
@@ -117,10 +116,7 @@ def delete_user_account(session: Session, account_id: int) -> None:
 
     if account is None:
         raise ValueError("계정을 찾을 수 없습니다.")
-    if account.is_system:
-        raise ValueError("시스템 계정은 삭제할 수 없습니다.")
-    if not account.allow_posting:
-        raise ValueError("집계 계정은 삭제할 수 없습니다.")
+    # Removed system/posting restrictions
 
     # Check children
     child_count = session.exec(

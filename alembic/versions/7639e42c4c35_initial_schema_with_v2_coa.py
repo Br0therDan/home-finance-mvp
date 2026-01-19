@@ -124,350 +124,48 @@ def upgrade() -> None:
     )
 
     # 2. SEED DATA (CoA)
-    # Explicit IDs to ensure stability
-    initial_accounts = [
-        # ASSET (1000 range) - L1
-        {
-            "id": 1001,
-            "name": "현금",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1002,
-            "name": "보통예금",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1003,
-            "name": "정기예금",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1004,
-            "name": "증권/투자자산",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1005,
-            "name": "부동산",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1006,
-            "name": "전세보증금(임차)",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1007,
-            "name": "대여금/미수금",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1008,
-            "name": "선급금/예치금",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1009,
-            "name": "차량/운송수단",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1010,
-            "name": "비품/장비",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 1099,
-            "name": "기타자산",
-            "type": "ASSET",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        # LIABILITY (2000 range) - L1
-        {
-            "id": 2001,
-            "name": "카드미지급금",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 2002,
-            "name": "주택담보대출",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 2003,
-            "name": "신용대출/기타대출",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 2004,
-            "name": "전세보증금(임대)",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 2005,
-            "name": "미지급금/외상",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 2006,
-            "name": "세금/공과금 미지급",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 2099,
-            "name": "기타부채",
-            "type": "LIABILITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        # EQUITY (3000 range) - L1
-        {
-            "id": 3001,
-            "name": "자본/순자산",
-            "type": "EQUITY",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        # EQUITY (3000 range) - L2 System Leaves
-        {
-            "id": 300101,
-            "name": "기초순자산(Opening Equity)",
-            "type": "EQUITY",
-            "level": 2,
-            "is_system": True,
-            "allow_posting": True,
-            "parent_id": 3001,
-        },
-        # INCOME (4000 range) - L1
-        {
-            "id": 4001,
-            "name": "근로/급여수익",
-            "type": "INCOME",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 4002,
-            "name": "사업/부업수익",
-            "type": "INCOME",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 4003,
-            "name": "임대수익",
-            "type": "INCOME",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 4004,
-            "name": "이자수익",
-            "type": "INCOME",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 4005,
-            "name": "배당수익",
-            "type": "INCOME",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 4099,
-            "name": "기타수익",
-            "type": "INCOME",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        # EXPENSE (5000 range) - L1
-        {
-            "id": 5001,
-            "name": "식비",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5002,
-            "name": "주거/관리비",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5003,
-            "name": "공과금/통신",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5004,
-            "name": "교통/차량비",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5005,
-            "name": "교육/육아",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5006,
-            "name": "의료/건강",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5007,
-            "name": "보험료",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5008,
-            "name": "세금/수수료",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5009,
-            "name": "이자비용",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5010,
-            "name": "소비/쇼핑",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5011,
-            "name": "여행/여가",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5012,
-            "name": "감가상각비",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        {
-            "id": 5099,
-            "name": "기타비용",
-            "type": "EXPENSE",
-            "level": 1,
-            "is_system": True,
-            "allow_posting": False,
-        },
-        # EXPENSE (5000 range) - L2 System Leaves
-        {
-            "id": 501201,
-            "name": "감가상각비(일반)",
-            "type": "EXPENSE",
-            "level": 2,
-            "is_system": True,
-            "allow_posting": True,
-            "parent_id": 5012,
-        },
-    ]
+    # 2. SEED DATA (CoA from CSV)
+    import csv
+    from pathlib import Path
 
-    # Defaults
-    for acc in initial_accounts:
-        acc.setdefault("is_active", True)
-        acc.setdefault("currency", "KRW")
-        acc.setdefault("parent_id", None)
-        # Ensure bools are bools
-        acc["is_active"] = bool(acc["is_active"])
-        acc["is_system"] = bool(acc["is_system"])
-        acc["allow_posting"] = bool(acc["allow_posting"])
+    # Locate the CSV file relative to the project root
+    # Assuming alembic is running from project root, or we can find it relative to this file
+    # This file is in alembic/versions/
+    # Seed is in core/seeds/
 
-    op.bulk_insert(accounts_table, initial_accounts)
+    # Try to find the seed file safely
+    current_file = Path(__file__).resolve()
+    # ../../core/seeds/seed_coa.csv
+    seed_path = current_file.parent.parent.parent / "core" / "seeds" / "seed_coa.csv"
+
+    if not seed_path.exists():
+        # Fallback if path resolution fails (e.g. running differently)
+        seed_path = Path("core/seeds/seed_coa.csv")
+
+    if not seed_path.exists():
+        print(f"WARNING: Seed file not found at {seed_path}. Skipping CoA seeding.")
+        return
+
+    initial_accounts = []
+    with open(seed_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # Convert types
+            acc = {
+                "id": int(row["id"]),
+                "name": row["name"],
+                "type": row["type"],
+                "level": int(row["level"]),
+                "is_system": bool(int(row["is_system"])),
+                "allow_posting": bool(int(row["allow_posting"])),
+                "is_active": bool(int(row.get("is_active", 1))),
+                "currency": row.get("currency", "KRW"),
+                "parent_id": int(row["parent_id"]) if row.get("parent_id") else None,
+            }
+            initial_accounts.append(acc)
+
+    if initial_accounts:
+        op.bulk_insert(accounts_table, initial_accounts)
 
 
 def downgrade() -> None:
