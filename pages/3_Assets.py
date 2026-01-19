@@ -14,6 +14,8 @@ from core.services.asset_service import (
     valuation_history,
 )
 from core.services.ledger_service import account_balances, list_posting_accounts
+from core.services.valuation_service import ValuationService
+from core.services.settings_service import get_base_currency
 
 st.set_page_config(page_title="Assets", page_icon="🏠", layout="wide")
 
@@ -98,19 +100,89 @@ for a in assets:
         }
     )
 
+st.subheader("자산 목록")
+val_service = ValuationService(conn)
+latest_vals = val_service.get_valuations_for_dashboard()
+base_currency = get_base_currency(conn)
+
+# Add valuation info to rows
+for row in rows:
+    v = latest_vals.get(row["id"])
+    if v:
+        row["최신평가액"] = f"{v['value_native']:,} {v['currency']}"
+        row["평가기준일"] = v["as_of_date"]
+    else:
+        row["최신평가액"] = "-"
+        row["평가기준일"] = "-"
+
 df = pd.DataFrame(rows)
 
-st.subheader("자산 목록")
-st.dataframe(df, width="stretch", hide_index=True)
-st.caption(
-    "구분: 원장기반은 해당 계정에 분개가 존재하는 자산, 인벤토리는 원장 반영이 없는 자산."
-)
+if not rows:
+    st.info("등록된 자산이 없습니다. 아래에서 자산을 먼저 등록해 주세요.")
+else:
+    cols_to_show = [
+        "자산명",
+        "분류",
+        "취득일",
+        "취득가",
+        "최신평가액",
+        "평가기준일",
+        "연결계정",
+        "구분",
+        "원장잔액",
+    ]
+    st.dataframe(df[cols_to_show], width="stretch", hide_index=True)
 
 st.divider()
 
-st.subheader("평가(Valuation) 추가")
-if len(df) == 0:
-    st.info("등록된 자산이 없다.")
+st.subheader("📝 수기 평가(Manual Valuation) 입력")
+asset_options = {int(r["id"]): f"{r['name']} ({r['asset_class']})" for r in assets}
+if not asset_options:
+    st.info("등록된 자산이 없습니다.")
+else:
+    with st.form("manual_val_form", clear_on_submit=True):
+        sel_asset_id = st.selectbox(
+            "자산 선택",
+            options=list(asset_options.keys()),
+            format_func=lambda x: asset_options[x],
+        )
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            val_date = st.date_input("평가 기준일", value=date.today())
+        with c2:
+            val_amount = st.number_input("평가 총액", min_value=0.0, step=10000.0)
+        with c3:
+            val_currency = st.selectbox(
+                "통화",
+                ["KRW", "USD", "JPY", "EUR"],
+                index=(
+                    ["KRW", "USD", "JPY", "EUR"].index(base_currency)
+                    if base_currency in ["KRW", "USD", "JPY", "EUR"]
+                    else 0
+                ),
+            )
+
+        val_note = st.text_input("메모 (선택사항)")
+
+        if st.form_submit_button("평가 저장"):
+            try:
+                val_service.upsert_asset_valuation(
+                    asset_id=sel_asset_id,
+                    as_of_date=val_date.isoformat(),
+                    value_native=val_amount,
+                    currency=val_currency,
+                    note=val_note,
+                )
+                st.success("평가값이 저장되었습니다.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"저장 실패: {e}")
+
+st.divider()
+
+st.subheader("원장 기반 평가(Valuation) 추가 (기존)")
+if not rows:
+    st.info("등록된 자산이 없습니다.")
 else:
     selected_id = st.selectbox("자산 선택", options=df["id"].tolist())
     with st.form("val_form", clear_on_submit=True):

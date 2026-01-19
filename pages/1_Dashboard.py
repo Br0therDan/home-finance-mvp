@@ -7,6 +7,8 @@ import streamlit as st
 
 from core.db import apply_migrations, get_connection
 from core.services.ledger_service import balance_sheet, income_statement
+from core.services.valuation_service import ValuationService
+from core.services.fx_service import get_latest_rate
 from core.ui.formatting import fmt, krw
 
 st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
@@ -21,20 +23,79 @@ display_currency = st.session_state.get("display_currency", "KRW")
 
 bs = balance_sheet(conn, as_of=as_of, display_currency=display_currency)
 
-col1, col2, col3 = st.columns(3)
+# --- Valuation Calculation ---
+val_service = ValuationService(conn)
+latest_vals = val_service.get_valuations_for_dashboard()
+valuation_total_disp = 0.0
+
+# Calculate total valuation (Fallback to Book Value if no manual valuation)
+for asset in bs["assets"]:
+    # Note: bs["assets"] contains all posting accounts in ASSET type
+    # We need to map these to our 'assets' table entries if possible
+    # For MVP, we'll try to find a manual valuation for the linked account.
+    # Actually, the 'assets' table has linked_account_id.
+    pass
+
+# Better approach: sum manual valuations + sum book values of other assets
+total_book_value_base = bs["total_assets_base"]
+
+# Get total valuation in Base Currency (KRW)
+valuation_base_total = 0.0
+# Assets from 'assets' table
+from core.services.asset_service import list_assets
+
+all_registered_assets = list_assets(conn)
+registered_linked_ids = {
+    int(a["linked_account_id"]): a["id"] for a in all_registered_assets
+}
+
+for acc in bs["assets"]:
+    acc_id = int(acc["id"])
+    asset_id = registered_linked_ids.get(acc_id)
+    manual_val = latest_vals.get(asset_id) if asset_id else None
+
+    if manual_val:
+        # Convert manual valuation to Base Currency
+        rate = get_latest_rate(conn, bs["base_currency"], manual_val["currency"])
+        valuation_base_total += manual_val["value_native"] * rate
+    else:
+        # Fallback to book value
+        valuation_base_total += acc["book_value_base"]
+
+valuation_disp_total = valuation_base_total * (
+    bs["total_assets_disp"] / bs["total_assets_base"]
+    if bs["total_assets_base"] != 0
+    else 1.0
+)
+unrealized_pnl_base = valuation_base_total - total_book_value_base
+
+col1, col2, col3, col4 = st.columns(4)
 col1.metric(
-    f"총 자산 ({display_currency})", fmt(bs["total_assets_disp"], display_currency)
+    f"총 자산 (장부, {display_currency})",
+    fmt(bs["total_assets_disp"], display_currency),
 )
 col2.metric(
+    f"총 자산 (평가, {display_currency})",
+    fmt(valuation_disp_total, display_currency),
+    delta=fmt(valuation_disp_total - bs["total_assets_disp"], display_currency),
+)
+col3.metric(
     f"총 부채 ({display_currency})", fmt(bs["total_liabilities_disp"], display_currency)
 )
-col3.metric(f"순자산 ({display_currency})", fmt(bs["net_worth_disp"], display_currency))
+col4.metric(
+    f"순자산 (평가, {display_currency})",
+    fmt(valuation_disp_total - bs["total_liabilities_disp"], display_currency),
+)
 
-with st.expander("🔍 장부 금액 (KRW 기준) 상세", expanded=False):
+with st.expander("🔍 장부 vs 평가 상세 (KRW 기준)", expanded=False):
     c1, c2, c3 = st.columns(3)
-    c1.metric("총 자산 (Book, KRW)", krw(bs["total_assets_base"]))
-    c2.metric("총 부채 (Book, KRW)", krw(bs["total_liabilities_base"]))
-    c3.metric("순자산 (Book, KRW)", krw(bs["net_worth_base"]))
+    c1.metric("총 자산 (Book Value)", krw(total_book_value_base))
+    c2.metric("총 자산 (Valuation)", krw(valuation_base_total))
+    c3.metric(
+        "미실현 손익 (Unrealized PnL)",
+        krw(unrealized_pnl_base),
+        delta=krw(unrealized_pnl_base),
+    )
 
 st.divider()
 
@@ -93,29 +154,3 @@ with c1:
 with c2:
     st.markdown("**비용(Expense)**")
     st.dataframe(expense_df, width="stretch", hide_index=True)
-
-st.divider()
-
-# --- Market Data Watchlist ---
-st.subheader("📊 시장 데이터 요약")
-from core.services.market_data_service import MarketDataService
-
-md_service = MarketDataService(conn)
-
-sync_log = md_service.get_last_sync_log("price")
-if sync_log:
-    st.caption(
-        f"가격 데이터 마지막 갱신: {sync_log['started_at']} ({sync_log['status']})"
-    )
-
-latest_prices = fetch_df(
-    conn,
-    "SELECT symbol, market, price, currency, as_of FROM market_prices ORDER BY symbol ASC, as_of DESC",
-)
-if not latest_prices.empty:
-    watchlist = latest_prices.sort_values("as_of", ascending=False).drop_duplicates(
-        "symbol"
-    )
-    st.dataframe(watchlist, use_container_width=True, hide_index=True)
-else:
-    st.info("동기화된 가격 데이터가 없습니다. 설정 페이지에서 동기화를 진행해주세요.")

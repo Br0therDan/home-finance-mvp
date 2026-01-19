@@ -54,25 +54,44 @@ def create_user_account(
 
     level = int(parent["level"]) + 1
 
+    # Calculate next 4-digit ID within parent's range (e.g. 1001-1099 for 1000)
+    # L1 parents are 1000, 1100, etc. L2 children are 1001, 1002...
+    parent_id_int = int(parent["id"])
+    range_min = parent_id_int + 1
+    range_max = parent_id_int + 99
+
+    row = conn.execute(
+        "SELECT MAX(id) as max_id FROM accounts WHERE id BETWEEN ? AND ?",
+        (range_min, range_max),
+    ).fetchone()
+
+    if row and row["max_id"]:
+        new_id = int(row["max_id"]) + 1
+    else:
+        new_id = range_min
+
+    if new_id > range_max:
+        raise ValueError(
+            f"해당 분류({parent['name']})의 하위 계정 한도(99개)를 초과했습니다."
+        )
+
     with conn:
-        cur = conn.execute(
+        conn.execute(
             """
-            INSERT INTO accounts(name, type, parent_id, is_active, is_system, level, allow_posting, currency)
-            VALUES (?, ?, ?, ?, 0, ?, 1, ?)
+            INSERT INTO accounts(id, name, type, parent_id, is_active, is_system, level, allow_posting, currency)
+            VALUES (?, ?, ?, ?, ?, 0, ?, 1, ?)
             """,
             (
+                new_id,
                 name.strip(),
                 type_,
-                int(parent_id),
+                parent_id_int,
                 1 if is_active else 0,
                 level,
                 currency.upper() if currency else "KRW",
             ),
         )
-        lastrowid = cur.lastrowid
-        if lastrowid is None:
-            raise RuntimeError("Failed to create account, no lastrowid returned.")
-        return int(lastrowid)
+        return new_id
 
 
 def update_user_account(
