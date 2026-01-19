@@ -32,14 +32,13 @@
 - 전표 라인(journal_lines) 목록
 - Trial Balance(계정별 차/대 집계)
 
-### 리포트
-- 재무상태표(BS)
-- 손익계산서(IS)
-- 월별 현금변화(간단 cashflow proxy)
-
-### 자산대장
-- 자산 등록(유/무형)
-- 평가(valuation) 추가 및 이력 조회
+### 멀티 통화(Multi-currency) 지원
+- **기준 통화(Base Currency)** 설정 (기본: KRW)
+- **표시 통화(Display Currency)** 실시간 전환 (사이드바)
+- 외화 계정(USD/JPY 등) 생성 및 거래 입력
+- 거래 시점 환율(**Snapshot FX**) 자동 기록
+- **장부 가액(Book Value)** vs **평가 가치(Current Value)** 비교 리포트
+- 수동 환율(Manual FX) 관리
 
 ### Day0 기초 잔액 설정
 - 과거 거래를 복원하지 않고 **오늘 기준 스냅샷**을 1회 입력
@@ -132,10 +131,23 @@ home-finance-mvp/
 - entry_id
 - account_id
 - debit
-- credit
+- credit (장부 통화 기준)
+- memo
+
+### journal_line_fx (외화 스냅샷)
+- line_id (journal_lines 연결)
+- native_currency / native_amount
+- fx_rate (거래 시점 환율)
+- base_currency / base_amount
+
+### fx_rates (환율 캐시)
+- base_currency
+- quote_currency
+- rate
+- as_of (기준일)
 
 > **검증 규칙**
-> - 한 전표의 debit 합 = credit 합 (대차평형)
+> - 한 전표의 debit 합 = credit 합 (대차평형, 장부 통화 기준)
 > - 한 라인은 debit/credit 둘 중 하나만 허용
 
 ### assets (자산대장)
@@ -201,7 +213,10 @@ home-finance-mvp/
 - 자산 처분/매각 손익 자동 분개
 - 카테고리(가계부) ↔ 계정과목(CoA) 매핑 룰 엔진
 - CSV Import/Export (은행/카드 사용내역)
-- 다중 통화, 월말 마감(Closing)
+- 멀티 통화 지원 (완료 - Phase 3/4)
+- 자산 처분/매각 손익 자동 분개
+- 카테고리(가계부) ↔ 계정과목(CoA) 매핑 룰 엔진
+- CSV Import/Export (은행/카드 사용내역)
 
 ---
 
