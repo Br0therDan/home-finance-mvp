@@ -81,6 +81,47 @@ def create_journal_entry(conn: sqlite3.Connection, entry: JournalEntryInput) -> 
             ],
         )
 
+        # Persistence for FX snapshots
+        # We need the IDs of the newly inserted journal_lines to link them.
+        # SQLite's lastrowid only gives the last one. Using a more reliable way:
+        line_rows = conn.execute(
+            "SELECT id, account_id FROM journal_lines WHERE entry_id = ? ORDER BY id ASC",
+            (entry_id,),
+        ).fetchall()
+
+        fx_payloads = []
+        for i, row in enumerate(line_rows):
+            line_input = entry.lines[i]
+            if (
+                line_input.native_currency
+                and line_input.native_amount is not None
+                and line_input.fx_rate
+            ):
+                from core.services.settings_service import get_base_currency
+
+                base_cur = get_base_currency(conn)
+
+                fx_payloads.append(
+                    (
+                        int(row["id"]),
+                        line_input.native_currency.upper(),
+                        float(line_input.native_amount),
+                        base_cur,
+                        float(line_input.fx_rate),
+                        float(line_input.debit or line_input.credit),
+                        "manual",
+                    )
+                )
+
+        if fx_payloads:
+            conn.executemany(
+                """
+                INSERT INTO journal_line_fx (line_id, native_currency, native_amount, base_currency, fx_rate, base_amount, rate_source)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                fx_payloads,
+            )
+
     return entry_id
 
 

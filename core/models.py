@@ -10,6 +10,10 @@ class JournalLine:
     debit: float = 0.0
     credit: float = 0.0
     memo: str = ""
+    # Multi-currency fields
+    native_amount: float | None = None
+    native_currency: str | None = None
+    fx_rate: float | None = None
 
 
 @dataclass

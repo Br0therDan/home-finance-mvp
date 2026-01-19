@@ -32,6 +32,7 @@ def create_user_account(
     type_: str,
     parent_id: int,
     is_active: bool = True,
+    currency: str | None = None,
 ) -> int:
     parent = conn.execute(
         """
@@ -56,10 +57,17 @@ def create_user_account(
     with conn:
         cur = conn.execute(
             """
-            INSERT INTO accounts(name, type, parent_id, is_active, is_system, level, allow_posting)
-            VALUES (?, ?, ?, ?, 0, ?, 1)
+            INSERT INTO accounts(name, type, parent_id, is_active, is_system, level, allow_posting, currency)
+            VALUES (?, ?, ?, ?, 0, ?, 1, ?)
             """,
-            (name.strip(), type_, int(parent_id), 1 if is_active else 0, level),
+            (
+                name.strip(),
+                type_,
+                int(parent_id),
+                1 if is_active else 0,
+                level,
+                currency.upper() if currency else "KRW",
+            ),
         )
         lastrowid = cur.lastrowid
         if lastrowid is None:
