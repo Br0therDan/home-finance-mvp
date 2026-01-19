@@ -139,7 +139,7 @@ def list_accounts(conn: sqlite3.Connection, active_only: bool = True):
 
 def list_posting_accounts(conn: sqlite3.Connection, active_only: bool = True):
     q = """
-    SELECT id, name, type, parent_id, is_active, is_system, level, allow_posting
+    SELECT id, name, type, parent_id, is_active, is_system, level, allow_posting, currency
     FROM accounts
     WHERE allow_posting = 1
     """

@@ -179,6 +179,33 @@ with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
 
 st.divider()
 
+# --- FX Rates Management Section ---
+from core.services.fx_service import get_latest_rate, save_rate
+
+with st.expander("💱 수동 환율 관리 (Manual FX Rates)", expanded=False):
+    col1, col2, col3 = st.columns([2, 2, 1])
+    with col1:
+        quote_cur = st.selectbox(
+            "외화 (Quote Currency)", ["USD", "JPY", "EUR", "CNY"], key="fx_quote"
+        )
+    with col2:
+        current_rate = get_latest_rate(conn, current_base, quote_cur)
+        new_rate = st.number_input(
+            f"환율 ({current_base}/{quote_cur})",
+            min_value=0.0,
+            value=current_rate,
+            step=1.0,
+        )
+    with col3:
+        st.write(" ")
+        st.write(" ")
+        if st.button("환율 저장"):
+            save_rate(conn, current_base, quote_cur, new_rate)
+            st.success("환율이 저장되었습니다.")
+            st.rerun()
+
+st.divider()
+
 if AgGrid is None:
     st.error("AgGrid UI가 설치되어 있지 않습니다. `uv sync`를 실행해 주세요.")
     st.stop()
@@ -460,6 +487,7 @@ def _dialog_create_child(type_: str, parent_id: int) -> None:
 
     name = st.text_input("계정명")
     is_active = st.checkbox("활성", value=True)
+    st.selectbox("통화", ["KRW", "USD", "JPY", "EUR"], key="new_acc_currency")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -471,6 +499,7 @@ def _dialog_create_child(type_: str, parent_id: int) -> None:
                     type_=type_,
                     parent_id=int(parent_id),
                     is_active=bool(is_active),
+                    currency=st.session_state.get("new_acc_currency", "KRW"),
                 )
                 st.success("계정을 생성했습니다.")
                 st.rerun()

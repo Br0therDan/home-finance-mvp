@@ -24,10 +24,10 @@ if len(accounts) == 0:
     )
     st.stop()
 
-asset_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "ASSET"]
-liab_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "LIABILITY"]
-income_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "INCOME"]
-expense_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "EXPENSE"]
+asset_accounts = [tuple(a) for a in accounts if a["type"] == "ASSET"]
+liab_accounts = [tuple(a) for a in accounts if a["type"] == "LIABILITY"]
+income_accounts = [tuple(a) for a in accounts if a["type"] == "INCOME"]
+expense_accounts = [tuple(a) for a in accounts if a["type"] == "EXPENSE"]
 
 TRANSACTION_TYPES = ["지출(Expense)", "수입(Income)", "이체(Transfer)"]
 
@@ -36,6 +36,11 @@ with st.form("txn_form", clear_on_submit=True):
     txn_date = st.date_input("날짜", value=date.today())
     amount = st.number_input("금액", min_value=0.0, value=0.0, step=1000.0)
     memo = st.text_input("메모", value="")
+
+    from core.services.fx_service import get_latest_rate
+    from core.services.settings_service import get_base_currency
+
+    base_cur = get_base_currency(conn)
 
     if ttype == "지출(Expense)":
         exp = st.selectbox(
@@ -46,6 +51,37 @@ with st.form("txn_form", clear_on_submit=True):
             options=asset_accounts + liab_accounts,
             format_func=lambda x: x[1],
         )
+
+        # FX Handling
+        (
+            pay_id,
+            pay_name,
+            pay_type,
+            pay_parent_id,
+            pay_active,
+            pay_system,
+            pay_level,
+            pay_posting,
+            pay_currency,
+        ) = pay
+        is_fx = pay_currency != base_cur
+
+        native_amount = 0.0
+        fx_rate = 1.0
+        if is_fx:
+            col1, col2 = st.columns(2)
+            with col1:
+                native_amount = st.number_input(
+                    f"외화 금액 ({pay_currency})", min_value=0.0, value=0.0, step=1.0
+                )
+            with col2:
+                latest_rate = get_latest_rate(conn, base_cur, pay_currency)
+                fx_rate = st.number_input(
+                    "환율 (KRW/외화)", min_value=0.0, value=latest_rate, step=1.0
+                )
+
+            amount = round(native_amount * fx_rate, 0)
+            st.info(f"계산된 장부 금액: {amount:,.0f} {base_cur}")
 
         submitted = st.form_submit_button("저장")
         if submitted:
@@ -68,6 +104,9 @@ with st.form("txn_form", clear_on_submit=True):
                             debit=0.0,
                             credit=float(amount),
                             memo=memo,
+                            native_amount=float(native_amount) if is_fx else None,
+                            native_currency=pay_currency if is_fx else None,
+                            fx_rate=float(fx_rate) if is_fx else None,
                         ),
                     ],
                 )
@@ -85,6 +124,37 @@ with st.form("txn_form", clear_on_submit=True):
             "입금 계정(현금/예금)", options=asset_accounts, format_func=lambda x: x[1]
         )
 
+        # FX Handling
+        (
+            recv_id,
+            recv_name,
+            recv_type,
+            recv_p,
+            recv_a,
+            recv_s,
+            recv_l,
+            recv_post,
+            recv_currency,
+        ) = recv
+        is_fx = recv_currency != base_cur
+
+        native_amount = 0.0
+        fx_rate = 1.0
+        if is_fx:
+            col1, col2 = st.columns(2)
+            with col1:
+                native_amount = st.number_input(
+                    f"외화 금액 ({recv_currency})", min_value=0.0, value=0.0, step=1.0
+                )
+            with col2:
+                latest_rate = get_latest_rate(conn, base_cur, recv_currency)
+                fx_rate = st.number_input(
+                    "환율 (KRW/외화)", min_value=0.0, value=latest_rate, step=1.0
+                )
+
+            amount = round(native_amount * fx_rate, 0)
+            st.info(f"계산된 장부 금액: {amount:,.0f} {base_cur}")
+
         submitted = st.form_submit_button("저장")
         if submitted:
             if amount <= 0:
@@ -100,6 +170,9 @@ with st.form("txn_form", clear_on_submit=True):
                             debit=float(amount),
                             credit=0.0,
                             memo=memo,
+                            native_amount=float(native_amount) if is_fx else None,
+                            native_currency=recv_currency if is_fx else None,
+                            fx_rate=float(fx_rate) if is_fx else None,
                         ),
                         JournalLine(
                             account_id=int(inc[0]),
@@ -127,6 +200,67 @@ with st.form("txn_form", clear_on_submit=True):
             format_func=lambda x: x[1],
         )
 
+        # Advanced FX Handling for Transfers
+        f_id, f_name, f_type, f_p, f_a, f_s, f_l, f_post, f_currency = from_acct
+        t_id, t_name, t_type, t_p, t_a, t_s, t_l, t_post, t_currency = to_acct
+
+        is_f_fx = f_currency != base_cur
+        is_t_fx = t_currency != base_cur
+
+        f_native = 0.0
+        t_native = 0.0
+        f_rate = 1.0
+        t_rate = 1.0
+
+        if is_f_fx or is_t_fx:
+            st.info(
+                "💡 멀티 통화 이체: 양쪽 계정의 현지 통화 금액과 환율을 각각 입력할 수 있습니다."
+            )
+            col1, col2 = st.columns(2)
+            if is_f_fx:
+                with col1:
+                    f_native = st.number_input(
+                        f"출금 외화 ({f_currency})",
+                        min_value=0.0,
+                        value=0.0,
+                        key="f_native",
+                    )
+                    f_rate = st.number_input(
+                        f"출금 환율 ({f_currency})",
+                        min_value=0.0,
+                        value=get_latest_rate(conn, base_cur, f_currency),
+                        key="f_rate",
+                    )
+            if is_t_fx:
+                with col2:
+                    t_native = st.number_input(
+                        f"입금 외화 ({t_currency})",
+                        min_value=0.0,
+                        value=0.0,
+                        key="t_native",
+                    )
+                    t_rate = st.number_input(
+                        f"입금 환율 ({t_currency})",
+                        min_value=0.0,
+                        value=get_latest_rate(conn, base_cur, t_currency),
+                        key="t_rate",
+                    )
+
+            # Decide base amount
+            if is_f_fx and not is_t_fx:
+                amount = round(f_native * f_rate, 0)
+            elif is_t_fx and not is_f_fx:
+                amount = round(t_native * t_rate, 0)
+            elif is_f_fx and is_t_fx:
+                # Both FX, use from_acct as base if native provided, else to_acct
+                amount = (
+                    round(f_native * f_rate, 0)
+                    if f_native > 0
+                    else round(t_native * t_rate, 0)
+                )
+
+            st.info(f"계산된 장부 금액: {amount:,.0f} {base_cur}")
+
         submitted = st.form_submit_button("저장")
         if submitted:
             if amount <= 0:
@@ -144,12 +278,18 @@ with st.form("txn_form", clear_on_submit=True):
                             debit=float(amount),
                             credit=0.0,
                             memo=memo,
+                            native_amount=float(t_native) if is_t_fx else None,
+                            native_currency=t_currency if is_t_fx else None,
+                            fx_rate=float(t_rate) if is_t_fx else None,
                         ),
                         JournalLine(
                             account_id=int(from_acct[0]),
                             debit=0.0,
                             credit=float(amount),
                             memo=memo,
+                            native_amount=float(f_native) if is_f_fx else None,
+                            native_currency=f_currency if is_f_fx else None,
+                            fx_rate=float(f_rate) if is_f_fx else None,
                         ),
                     ],
                 )
