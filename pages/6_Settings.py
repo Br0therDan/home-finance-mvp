@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import tomllib
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -179,32 +180,84 @@ with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
 
 st.divider()
 
-# --- FX Rates Management Section ---
-from core.services.fx_service import get_latest_rate, save_rate
+# --- Market Data Section ---
+from core.services.market_data_service import MarketDataService
 
-with st.expander("💱 수동 환율 관리 (Manual FX Rates)", expanded=False):
-    col1, col2, col3 = st.columns([2, 2, 1])
-    with col1:
-        quote_cur = st.selectbox(
-            "외화 (Quote Currency)", ["USD", "JPY", "EUR", "CNY"], key="fx_quote"
+md_service = MarketDataService(conn)
+
+with st.expander("📊 외부 시장 데이터 (Market Data)", expanded=True):
+    st.subheader("💱 수동 환율 입력")
+    c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+    with c1:
+        fx_quote = st.selectbox(
+            "외화", ["USD", "JPY", "EUR", "CNY"], key="market_fx_quote"
         )
-    with col2:
-        current_rate = get_latest_rate(conn, current_base, quote_cur)
-        new_rate = st.number_input(
-            f"환율 ({current_base}/{quote_cur})",
+    with c2:
+        latest_fx = md_service.get_latest_fx(current_base, fx_quote)
+        fx_rate_val = latest_fx["rate"] if latest_fx else 1350.0
+        new_fx_rate = st.number_input(
+            f"환율 ({current_base}/{fx_quote})",
             min_value=0.0,
-            value=current_rate,
-            step=1.0,
+            value=float(fx_rate_val),
+            step=0.1,
         )
-    with col3:
-        st.write(" ")
-        st.write(" ")
-        if st.button("환율 저장"):
-            save_rate(conn, current_base, quote_cur, new_rate)
-            st.success("환율이 저장되었습니다.")
+    with c3:
+        as_of_date = st.date_input("기준일", datetime.now(), key="fx_as_of")
+    with c4:
+        st.write("")
+        st.write("")
+        if st.button("FX 저장", use_container_width=True):
+            md_service.save_manual_fx_rate(
+                current_base, fx_quote, new_fx_rate, as_of_date.isoformat()
+            )
+            st.success(f"{fx_quote} 환율 저장 완료")
             st.rerun()
 
-st.divider()
+    st.divider()
+
+    st.subheader("📈 주식/ETF 가격 동기화 (Alpha Vantage)")
+    last_price_sync = md_service.get_last_sync_log("price")
+    if last_price_sync:
+        st.caption(
+            f"마지막 동기화: {last_price_sync['started_at']} ({last_price_sync['status']})"
+        )
+
+    sc1, sc2, sc3 = st.columns([2, 4, 1])
+    with sc1:
+        market_choice = st.selectbox("시장", ["US"], index=0)
+    with sc2:
+        symbols_str = st.text_input(
+            "심볼 (쉼표로 구분)", placeholder="AAPL, MSFT, TSLA"
+        )
+    with sc3:
+        st.write("")
+        st.write("")
+        if st.button("지금 동기화", use_container_width=True):
+            if not symbols_str:
+                st.error("심볼을 입력해주세요.")
+            else:
+                try:
+                    symbols = [
+                        s.strip().upper() for s in symbols_str.split(",") if s.strip()
+                    ]
+                    with st.spinner("Alpha Vantage에서 데이터를 가져오는 중..."):
+                        md_service.sync_prices(symbols, market_choice)
+                    st.success(f"{len(symbols)}개 심볼 동기화 완료")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"동기화 실패: {str(e)}")
+
+    # Show latest prices table
+    latest_prices_df = fetch_df(
+        conn,
+        "SELECT symbol, market, price, currency, as_of FROM market_prices ORDER BY symbol ASC, as_of DESC",
+    )
+    if not latest_prices_df.empty:
+        # Keep only latest for each symbol
+        latest_prices_df = latest_prices_df.sort_values(
+            "as_of", ascending=False
+        ).drop_duplicates("symbol")
+        st.dataframe(latest_prices_df, use_container_width=True, hide_index=True)
 
 if AgGrid is None:
     st.error("AgGrid UI가 설치되어 있지 않습니다. `uv sync`를 실행해 주세요.")

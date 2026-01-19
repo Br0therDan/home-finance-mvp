@@ -93,3 +93,29 @@ with c1:
 with c2:
     st.markdown("**비용(Expense)**")
     st.dataframe(expense_df, width="stretch", hide_index=True)
+
+st.divider()
+
+# --- Market Data Watchlist ---
+st.subheader("📊 시장 데이터 요약")
+from core.services.market_data_service import MarketDataService
+
+md_service = MarketDataService(conn)
+
+sync_log = md_service.get_last_sync_log("price")
+if sync_log:
+    st.caption(
+        f"가격 데이터 마지막 갱신: {sync_log['started_at']} ({sync_log['status']})"
+    )
+
+latest_prices = fetch_df(
+    conn,
+    "SELECT symbol, market, price, currency, as_of FROM market_prices ORDER BY symbol ASC, as_of DESC",
+)
+if not latest_prices.empty:
+    watchlist = latest_prices.sort_values("as_of", ascending=False).drop_duplicates(
+        "symbol"
+    )
+    st.dataframe(watchlist, use_container_width=True, hide_index=True)
+else:
+    st.info("동기화된 가격 데이터가 없습니다. 설정 페이지에서 동기화를 진행해주세요.")
