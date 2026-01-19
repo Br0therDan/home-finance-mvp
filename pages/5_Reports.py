@@ -11,7 +11,7 @@ from core.services.ledger_service import (
     income_statement,
     monthly_cashflow,
 )
-from core.ui.formatting import krw
+from core.ui.formatting import fmt, krw
 
 st.set_page_config(page_title="Reports", page_icon="📈", layout="wide")
 
@@ -22,19 +22,41 @@ st.title("리포트")
 
 st.subheader("재무상태표(BS)")
 as_of = st.date_input("기준일", value=date.today())
-bs = balance_sheet(conn, as_of=as_of)
+display_currency = st.session_state.get("display_currency", "KRW")
+bs = balance_sheet(conn, as_of=as_of, display_currency=display_currency)
 
-assets_df = pd.DataFrame(bs["assets"], columns=["자산", "금액"])
-liab_df = pd.DataFrame(bs["liabilities"], columns=["부채", "금액"])
-eq_df = pd.DataFrame(bs["equity"], columns=["자본", "금액"])
+
+def _prep_bs_df(items):
+    data = []
+    for i in items:
+        data.append(
+            {
+                "계정": i["name"],
+                "통화": i["currency"],
+                "평가가치(표시)": i["display_value"],
+            }
+        )
+    return pd.DataFrame(data)
+
+
+assets_df = _prep_bs_df(bs["assets"])
+liab_df = _prep_bs_df(bs["liabilities"])
+eq_df = _prep_bs_df(bs["equity"])
 
 col1, col2, col3 = st.columns(3)
 with col1:
-    st.metric("총 자산", krw(bs["total_assets"]))
+    st.metric(
+        f"총 자산 ({display_currency})", fmt(bs["total_assets_disp"], display_currency)
+    )
 with col2:
-    st.metric("총 부채", krw(bs["total_liabilities"]))
+    st.metric(
+        f"총 부채 ({display_currency})",
+        fmt(bs["total_liabilities_disp"], display_currency),
+    )
 with col3:
-    st.metric("순자산", krw(bs["net_worth"]))
+    st.metric(
+        f"순자산 ({display_currency})", fmt(bs["net_worth_disp"], display_currency)
+    )
 
 c1, c2, c3 = st.columns(3)
 with c1:
@@ -43,8 +65,6 @@ with c2:
     st.dataframe(liab_df, width="stretch", hide_index=True)
 with c3:
     st.dataframe(eq_df, width="stretch", hide_index=True)
-
-st.caption(f"BS 불일치(자산 - (부채+자본)) = {krw(bs['balanced_gap'])}")
 
 st.divider()
 

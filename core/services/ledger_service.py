@@ -259,7 +259,7 @@ def create_opening_balance_entry(
 def account_balances(
     conn: sqlite3.Connection, as_of: date | None = None
 ) -> dict[int, float]:
-    """Return raw balance = sum(debit - credit) per account."""
+    """Return raw balance = sum(debit - credit) per account (in base currency)."""
     params: list[str] = []
     where = ""
     if as_of is not None:
@@ -279,6 +279,52 @@ def account_balances(
     ).fetchall()
 
     return {int(r["account_id"]): float(r["balance"] or 0.0) for r in rows}
+
+
+def account_balances_multi(
+    conn: sqlite3.Connection, as_of: date | None = None
+) -> dict[int, dict[str, float]]:
+    """Return both base_balance and native_balance per account.
+
+    Returns: { account_id: { 'base': float, 'native': float } }
+    """
+    params: list[str] = []
+    where = ""
+    if as_of is not None:
+        where = "WHERE je.entry_date <= ?"
+        params.append(as_of.isoformat())
+
+    # Calculate native balances from journal_line_fx where available,
+    # otherwise fallback to base amount (assuming native=base for KRW accounts).
+    rows = conn.execute(
+        f"""
+        SELECT 
+            jl.account_id,
+            SUM(jl.debit - jl.credit) AS base_balance,
+            SUM(
+                CASE 
+                    WHEN fx.native_amount IS NOT NULL THEN (
+                        CASE WHEN jl.debit > 0 THEN fx.native_amount ELSE -fx.native_amount END
+                    )
+                    ELSE (jl.debit - jl.credit)
+                END
+            ) AS native_balance
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+        LEFT JOIN journal_line_fx fx ON fx.line_id = jl.id
+        {where}
+        GROUP BY jl.account_id
+        """,
+        tuple(params),
+    ).fetchall()
+
+    return {
+        int(r["account_id"]): {
+            "base": float(r["base_balance"] or 0.0),
+            "native": float(r["native_balance"] or 0.0),
+        }
+        for r in rows
+    }
 
 
 def trial_balance(conn: sqlite3.Connection, as_of: date | None = None):
@@ -302,54 +348,113 @@ def trial_balance(conn: sqlite3.Connection, as_of: date | None = None):
     return results
 
 
-def balance_sheet(conn: sqlite3.Connection, as_of: date | None = None):
-    """Compute a simple balance sheet using raw balances.
+def balance_sheet(
+    conn: sqlite3.Connection,
+    as_of: date | None = None,
+    display_currency: str | None = None,
+):
+    """Compute a multi-currency enabled balance sheet.
 
-    Convention:
-      - Assets: positive balances typically
-      - Liabilities/Equity: negative balances typically
-
-    For display:
-      assets_value = max(balance, 0)
-      liab_eq_value = max(-balance, 0)
+    If display_currency is provided, convert all values to that currency
+    using the latest available exchange rates.
     """
-    bal = account_balances(conn, as_of=as_of)
+    from core.services.fx_service import get_latest_rate
+    from core.services.settings_service import get_base_currency
+
+    base_cur = get_base_currency(conn)
+    quote_cur = display_currency or base_cur
+
+    bal_multi = account_balances_multi(conn, as_of=as_of)
     accounts = list_accounts(conn, active_only=True)
+
+    # Pre-fetch currencies for accounts
+    acc_currencies = {
+        int(a["id"]): a.get("currency", base_cur) or base_cur for a in accounts
+    }
 
     assets = []
     liabilities = []
     equity = []
 
     for a in accounts:
+        aid = int(a["id"])
         t = a["type"]
-        b = float(bal.get(int(a["id"]), 0.0))
+        b_data = bal_multi.get(aid, {"base": 0.0, "native": 0.0})
+        base_val = b_data["base"]
+        native_val = b_data["native"]
+        native_cur = acc_currencies.get(aid, base_cur)
+
+        # Book Value (Historical cost in base currency)
+        book_val = base_val
+
+        # Current Value (Mark-to-Market in base currency)
+        if native_cur == base_cur:
+            current_val_base = base_val
+        else:
+            current_rate = get_latest_rate(conn, base_cur, native_cur)
+            current_val_base = native_val * current_rate
+
+        # Display Value (Converted to quote_cur for representation)
+        if quote_cur == base_cur:
+            disp_val = current_val_base
+        else:
+            # KRW -> Quote conversion
+            krw_quote_rate = get_latest_rate(conn, base_cur, quote_cur)
+            disp_val = current_val_base / krw_quote_rate if krw_quote_rate != 0 else 0.0
+
+        item = {
+            "name": a["name"],
+            "currency": native_cur,
+            "native_balance": native_val,
+            "book_value_base": book_val,
+            "current_value_base": current_val_base,
+            "display_value": disp_val,
+        }
 
         if t == "ASSET":
-            v = b
-            if abs(v) > 1e-9:
-                assets.append((a["name"], v))
+            if abs(base_val) > 1e-9 or abs(native_val) > 1e-9:
+                assets.append(item)
         elif t == "LIABILITY":
-            v = -b
-            if abs(v) > 1e-9:
-                liabilities.append((a["name"], v))
+            # Convention: Liabilities are credit (negative) in raw balance
+            # Flip sign for reporting
+            item["native_balance"] = -native_val
+            item["book_value_base"] = -book_val
+            item["current_value_base"] = -current_val_base
+            item["display_value"] = -disp_val
+            if abs(base_val) > 1e-9 or abs(native_val) > 1e-9:
+                liabilities.append(item)
         elif t == "EQUITY":
-            v = -b
-            if abs(v) > 1e-9:
-                equity.append((a["name"], v))
+            item["native_balance"] = -native_val
+            item["book_value_base"] = -book_val
+            item["current_value_base"] = -current_val_base
+            item["display_value"] = -disp_val
+            if abs(base_val) > 1e-9 or abs(native_val) > 1e-9:
+                equity.append(item)
 
-    total_assets = sum(v for _, v in assets)
-    total_liab = sum(v for _, v in liabilities)
-    total_eq = sum(v for _, v in equity)
+    total_assets_base = sum(i["current_value_base"] for i in assets)
+    total_liab_base = sum(i["current_value_base"] for i in liabilities)
+    total_eq_base = sum(
+        i["book_value_base"] for i in equity
+    )  # Equity is usually book value
+
+    total_assets_disp = sum(i["display_value"] for i in assets)
+    total_liab_disp = sum(i["display_value"] for i in liabilities)
+    total_eq_disp = sum(i["display_value"] for i in equity)
 
     return {
         "assets": assets,
         "liabilities": liabilities,
         "equity": equity,
-        "total_assets": total_assets,
-        "total_liabilities": total_liab,
-        "total_equity": total_eq,
-        "net_worth": total_assets - total_liab,
-        "balanced_gap": total_assets - (total_liab + total_eq),
+        "total_assets_base": total_assets_base,
+        "total_liabilities_base": total_liab_base,
+        "total_equity_base": total_eq_base,
+        "total_assets_disp": total_assets_disp,
+        "total_liabilities_disp": total_liab_disp,
+        "total_equity_disp": total_eq_disp,
+        "net_worth_base": total_assets_base - total_liab_base,
+        "net_worth_disp": total_assets_disp - total_liab_disp,
+        "display_currency": quote_cur,
+        "base_currency": base_cur,
     }
 
 

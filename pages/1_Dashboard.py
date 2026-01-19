@@ -7,7 +7,7 @@ import streamlit as st
 
 from core.db import apply_migrations, get_connection
 from core.services.ledger_service import balance_sheet, income_statement
-from core.ui.formatting import krw
+from core.ui.formatting import fmt, krw
 
 st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
 
@@ -17,32 +17,58 @@ apply_migrations(conn)
 st.title("대시보드")
 
 as_of = st.date_input("기준일", value=date.today())
+display_currency = st.session_state.get("display_currency", "KRW")
 
-bs = balance_sheet(conn, as_of=as_of)
+bs = balance_sheet(conn, as_of=as_of, display_currency=display_currency)
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("총 자산", krw(bs["total_assets"]))
-col2.metric("총 부채", krw(bs["total_liabilities"]))
-col3.metric("순자산", krw(bs["net_worth"]))
-col4.metric("BS 불일치(점검)", krw(bs["balanced_gap"]))
+col1, col2, col3 = st.columns(3)
+col1.metric(
+    f"총 자산 ({display_currency})", fmt(bs["total_assets_disp"], display_currency)
+)
+col2.metric(
+    f"총 부채 ({display_currency})", fmt(bs["total_liabilities_disp"], display_currency)
+)
+col3.metric(f"순자산 ({display_currency})", fmt(bs["net_worth_disp"], display_currency))
+
+with st.expander("🔍 장부 금액 (KRW 기준) 상세", expanded=False):
+    c1, c2, c3 = st.columns(3)
+    c1.metric("총 자산 (Book, KRW)", krw(bs["total_assets_base"]))
+    c2.metric("총 부채 (Book, KRW)", krw(bs["total_liabilities_base"]))
+    c3.metric("순자산 (Book, KRW)", krw(bs["net_worth_base"]))
 
 st.divider()
 
 st.subheader("재무상태표(BS) 요약")
 
-assets_df = pd.DataFrame(bs["assets"], columns=["계정", "금액"])
-liab_df = pd.DataFrame(bs["liabilities"], columns=["계정", "금액"])
-eq_df = pd.DataFrame(bs["equity"], columns=["계정", "금액"])
+
+def _prep_df(items):
+    data = []
+    for i in items:
+        data.append(
+            {
+                "계정": i["name"],
+                "통화": i["currency"],
+                "잔액(현지)": i["native_balance"],
+                "평가가치(표시)": i["display_value"],
+                "장부금액(Base)": i["book_value_base"],
+            }
+        )
+    return pd.DataFrame(data)
+
+
+assets_df = _prep_df(bs["assets"])
+liab_df = _prep_df(bs["liabilities"])
+eq_df = _prep_df(bs["equity"])
 
 c1, c2, c3 = st.columns(3)
 with c1:
-    st.markdown("**자산**")
+    st.markdown(f"**자산 ({display_currency})**")
     st.dataframe(assets_df, width="stretch", hide_index=True)
 with c2:
-    st.markdown("**부채**")
+    st.markdown(f"**부채 ({display_currency})**")
     st.dataframe(liab_df, width="stretch", hide_index=True)
 with c3:
-    st.markdown("**자본**")
+    st.markdown(f"**자본 ({display_currency})**")
     st.dataframe(eq_df, width="stretch", hide_index=True)
 
 st.divider()
