@@ -127,7 +127,7 @@ def create_journal_entry(conn: sqlite3.Connection, entry: JournalEntryInput) -> 
 
 def list_accounts(conn: sqlite3.Connection, active_only: bool = True):
     q = """
-    SELECT id, name, type, parent_id, is_active, is_system, level, allow_posting
+    SELECT id, name, type, parent_id, is_active, is_system, level, allow_posting, currency
     FROM accounts
     """
     params: tuple = ()
@@ -369,7 +369,7 @@ def balance_sheet(
 
     # Pre-fetch currencies for accounts
     acc_currencies = {
-        int(a["id"]): a.get("currency", base_cur) or base_cur for a in accounts
+        int(a["id"]): dict(a).get("currency", base_cur) or base_cur for a in accounts
     }
 
     assets = []
