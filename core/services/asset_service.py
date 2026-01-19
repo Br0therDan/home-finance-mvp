@@ -35,7 +35,7 @@ def list_assets(conn: sqlite3.Connection):
     return conn.execute(
         """
         SELECT a.id, a.name, a.asset_class, a.acquisition_date, a.acquisition_cost,
-               a.linked_account_id,
+               a.linked_account_id, a.note,
                acc.name AS linked_account
         FROM assets a
         JOIN accounts acc ON acc.id = a.linked_account_id
@@ -43,6 +43,42 @@ def list_assets(conn: sqlite3.Connection):
         ORDER BY a.acquisition_date DESC, a.id DESC
         """
     ).fetchall()
+
+
+def update_asset(
+    conn: sqlite3.Connection,
+    asset_id: int,
+    name: str,
+    asset_class: str,
+    linked_account_id: int,
+    acquisition_date: date,
+    acquisition_cost: float,
+    note: str,
+) -> None:
+    with conn:
+        conn.execute(
+            """
+            UPDATE assets
+            SET name = ?, asset_class = ?, linked_account_id = ?, 
+                acquisition_date = ?, acquisition_cost = ?, note = ?
+            WHERE id = ?
+            """,
+            (
+                name.strip(),
+                asset_class,
+                int(linked_account_id),
+                acquisition_date.isoformat(),
+                float(acquisition_cost),
+                note,
+                int(asset_id),
+            ),
+        )
+
+
+def delete_asset(conn: sqlite3.Connection, asset_id: int) -> None:
+    with conn:
+        # Note: valuation records have ON DELETE CASCADE in the schema
+        conn.execute("DELETE FROM assets WHERE id = ?", (int(asset_id),))
 
 
 def add_valuation(

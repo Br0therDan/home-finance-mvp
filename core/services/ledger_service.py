@@ -177,6 +177,14 @@ def has_opening_balance_entry(conn: sqlite3.Connection) -> bool:
     return int(row["cnt"] or 0) > 0
 
 
+def delete_opening_balance_entry(conn: sqlite3.Connection) -> None:
+    """Delete the existing opening balance entry and its lines."""
+    with conn:
+        conn.execute(
+            "DELETE FROM journal_entries WHERE source = ?", ("opening_balance",)
+        )
+
+
 def create_opening_balance_entry(
     conn: sqlite3.Connection,
     entry_date: date,
@@ -403,6 +411,7 @@ def balance_sheet(
             disp_val = current_val_base / krw_quote_rate if krw_quote_rate != 0 else 0.0
 
         item = {
+            "id": aid,
             "name": a["name"],
             "currency": native_cur,
             "native_balance": native_val,

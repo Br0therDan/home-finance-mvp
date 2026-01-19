@@ -1,9 +1,16 @@
-from __future__ import annotations
-
 from datetime import date
-
 import pandas as pd
 import streamlit as st
+
+try:
+    from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
+    from st_aggrid.shared import DataReturnMode, GridUpdateMode
+except ImportError:
+    AgGrid = None
+    GridOptionsBuilder = None
+    JsCode = None
+    DataReturnMode = None
+    GridUpdateMode = None
 
 from core.db import apply_migrations, get_connection
 from core.services.asset_service import (
@@ -11,11 +18,17 @@ from core.services.asset_service import (
     create_asset,
     latest_valuation,
     list_assets,
+    update_asset,
+    delete_asset,
     valuation_history,
 )
 from core.services.ledger_service import account_balances, list_posting_accounts
 from core.services.valuation_service import ValuationService
 from core.services.settings_service import get_base_currency
+
+NO_ACTION = "-"
+EDIT_ACTION = "✏️ 편집"
+DELETE_ACTION = "🗑️ 삭제"
 
 st.set_page_config(page_title="Assets", page_icon="🏠", layout="wide")
 
@@ -95,43 +108,200 @@ for a in assets:
             "최근평가": float(lv["value"]) if lv else None,
             "평가일": lv["valuation_date"] if lv else None,
             "연결계정": a["linked_account"],
+            "연결계정ID": linked_account_id,
+            "메모": a["note"],
             "구분": "원장기반" if is_ledger_based else "인벤토리",
             "원장잔액": float(ledger_balances.get(linked_account_id, 0.0)),
         }
     )
+
+
+@st.dialog("자산 수정")
+def _dialog_edit_asset(asset: dict, asset_accounts: list):
+    with st.form("edit_asset_form"):
+        new_name = st.text_input("자산명", value=asset["자산명"])
+        new_class = st.selectbox(
+            "자산 분류",
+            [
+                "CASH",
+                "BANK",
+                "STOCK",
+                "CRYPTO",
+                "REAL_ESTATE",
+                "VEHICLE",
+                "EQUIPMENT",
+                "INTANGIBLE",
+                "OTHER",
+            ],
+            index=[
+                "CASH",
+                "BANK",
+                "STOCK",
+                "CRYPTO",
+                "REAL_ESTATE",
+                "VEHICLE",
+                "EQUIPMENT",
+                "INTANGIBLE",
+                "OTHER",
+            ].index(asset["분류"]),
+        )
+        # Find index of current linked account
+        acc_ids = [acc[0] for acc in asset_accounts]
+        try:
+            acc_idx = acc_ids.index(asset["연결계정ID"])
+        except ValueError:
+            acc_idx = 0
+
+        new_linked = st.selectbox(
+            "연결 계정",
+            options=asset_accounts,
+            format_func=lambda x: x[1],
+            index=acc_idx,
+        )
+        new_date = st.date_input("취득일", value=date.fromisoformat(asset["취득일"]))
+        new_cost = st.number_input(
+            "취득가", min_value=0.0, value=float(asset["취득가"]), step=10000.0
+        )
+        new_note = st.text_area("메모", value=asset["메모"])
+
+        if st.form_submit_button("저장"):
+            try:
+                update_asset(
+                    conn,
+                    asset_id=asset["id"],
+                    name=new_name,
+                    asset_class=new_class,
+                    linked_account_id=new_linked[0],
+                    acquisition_date=new_date,
+                    acquisition_cost=new_cost,
+                    note=new_note,
+                )
+                st.success("수정되었습니다.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"수정 실패: {e}")
+
+
+@st.dialog("자산 삭제")
+def _dialog_delete_asset(asset: dict):
+    st.warning("⚠️ 자산을 삭제하면 모든 평가 이력도 함께 삭제됩니다.")
+    st.write(f"대상: **{asset['자산명']}**")
+    if st.button("영구 삭제", type="primary"):
+        try:
+            delete_asset(conn, asset["id"])
+            st.success("삭제되었습니다.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"삭제 실패: {e}")
+
+
+def _handle_asset_action(df: pd.DataFrame, asset_accounts: list):
+    # Action handling using AgGrid selection logic (placeholder since we use selectbox column)
+    # But since AgGrid is community, we use the "Action" column strategy
+    pass
+
 
 st.subheader("자산 목록")
 val_service = ValuationService(conn)
 latest_vals = val_service.get_valuations_for_dashboard()
 base_currency = get_base_currency(conn)
 
-# Add valuation info to rows
+# Add valuation info and Action column
 for row in rows:
     v = latest_vals.get(row["id"])
     if v:
-        row["최신평가액"] = f"{v['value_native']:,} {v['currency']}"
+        row["최신평가액"] = f"{v['value_native']:,.0f} {v['currency']}"
         row["평가기준일"] = v["as_of_date"]
     else:
         row["최신평가액"] = "-"
         row["평가기준일"] = "-"
+    row["⋯"] = NO_ACTION
 
 df = pd.DataFrame(rows)
 
 if not rows:
     st.info("등록된 자산이 없습니다. 아래에서 자산을 먼저 등록해 주세요.")
 else:
-    cols_to_show = [
-        "자산명",
-        "분류",
-        "취득일",
-        "취득가",
-        "최신평가액",
-        "평가기준일",
-        "연결계정",
-        "구분",
-        "원장잔액",
-    ]
-    st.dataframe(df[cols_to_show], width="stretch", hide_index=True)
+    if AgGrid is None:
+        st.warning("AgGrid가 설치되지 않아 편집/삭제 기능을 제한적으로 제공합니다.")
+        cols_to_show = [
+            "자산명",
+            "분류",
+            "취득일",
+            "취득가",
+            "최신평가액",
+            "평가기준일",
+            "연결계정",
+            "구분",
+            "원장잔액",
+        ]
+        st.dataframe(
+            df[cols_to_show],
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "취득가": st.column_config.NumberColumn(format="%.0f"),
+                "원장잔액": st.column_config.NumberColumn(format="%.0f"),
+            },
+        )
+    else:
+        cols_to_show = [
+            "id",
+            "자산명",
+            "분류",
+            "취득일",
+            "취득가",
+            "최신평가액",
+            "평가기준일",
+            "연결계정",
+            "구분",
+            "원장잔액",
+            "⋯",
+        ]
+        grid_df = df[cols_to_show].copy()
+
+        gb = GridOptionsBuilder.from_dataframe(grid_df)
+        gb.configure_default_column(resizable=True, sortable=True, filter=True)
+        gb.configure_column("id", hide=True)
+        gb.configure_column("취득가", valueFormatter="x.toLocaleString()")
+        gb.configure_column("원장잔액", valueFormatter="x.toLocaleString()")
+
+        # Action column with dropdown
+        gb.configure_column(
+            "⋯",
+            editable=True,
+            cellEditor="agSelectCellEditor",
+            cellEditorParams={"values": [NO_ACTION, EDIT_ACTION, DELETE_ACTION]},
+            width=100,
+            pinned="right",
+        )
+
+        grid_options = gb.build()
+        grid_response = AgGrid(
+            grid_df,
+            gridOptions=grid_options,
+            data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+            update_mode=GridUpdateMode.VALUE_CHANGED,
+            theme="balham",
+            height=300,
+            width="100%",
+        )
+
+        # Handle Action from value change
+        updated_df = pd.DataFrame(grid_response["data"])
+        if not updated_df.empty and "⋯" in updated_df.columns:
+            action_row = updated_df[updated_df["⋯"] != NO_ACTION]
+            if not action_row.empty:
+                selected_asset = action_row.iloc[0].to_dict()
+                action = selected_asset["⋯"]
+
+                # Find original row to get all hidden data (memo, account id)
+                original_row = df[df["id"] == selected_asset["id"]].iloc[0].to_dict()
+
+                if action == EDIT_ACTION:
+                    _dialog_edit_asset(original_row, asset_accounts)
+                elif action == DELETE_ACTION:
+                    _dialog_delete_asset(original_row)
 
 st.divider()
 
@@ -224,4 +394,9 @@ else:
             for r in hist
         ]
     )
-    st.dataframe(hist_df, width="stretch", hide_index=True)
+    st.dataframe(
+        hist_df,
+        width="stretch",
+        hide_index=True,
+        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+    )

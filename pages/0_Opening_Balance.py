@@ -9,6 +9,7 @@ from core.db import apply_migrations, get_connection
 from core.models import JournalLine
 from core.services.ledger_service import (
     create_opening_balance_entry,
+    delete_opening_balance_entry,
     get_account_by_name,
     has_opening_balance_entry,
     list_accounts,
@@ -76,7 +77,24 @@ if has_opening_balance_entry(conn):
             (int(existing["id"]),),
         ).fetchall()
         df = pd.DataFrame(lines, columns=["계정", "유형", "차변", "대변", "메모"])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+        st.dataframe(
+            df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "차변": st.column_config.NumberColumn(format="%.0f"),
+                "대변": st.column_config.NumberColumn(format="%.0f"),
+            },
+        )
+
+    st.divider()
+    st.subheader("⚠️ 초기화 후 재입력")
+    st.info("기초 잔액을 수정하려면 기존 전표를 삭제하고 다시 입력해야 합니다.")
+    if st.button("기존 기초 잔액 전표 삭제 및 초기화"):
+        delete_opening_balance_entry(conn)
+        st.success("초기화되었습니다. 페이지를 새로고침합니다.")
+        st.rerun()
+
     st.stop()
 
 if "asset_rows" not in st.session_state:
@@ -204,7 +222,15 @@ with st.form("opening_balance_form"):
 
     if preview_rows:
         preview_df = pd.DataFrame(preview_rows)
-        st.dataframe(preview_df, use_container_width=True, hide_index=True)
+        st.dataframe(
+            preview_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "차변": st.column_config.NumberColumn(format="%.0f"),
+                "대변": st.column_config.NumberColumn(format="%.0f"),
+            },
+        )
         st.caption(f"합계: 차변 {total_debit:,.0f} / 대변 {total_credit:,.0f}")
     else:
         st.info("자산 또는 부채 라인을 입력하세요.")

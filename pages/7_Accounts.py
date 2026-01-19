@@ -160,7 +160,7 @@ def _load_accounts_df() -> pd.DataFrame:
     return fetch_df(
         conn,
         """
-        SELECT a.id, a.name, a.type, a.parent_id, a.is_active, a.is_system, a.level, a.allow_posting,
+        SELECT a.id, a.name, a.type, a.parent_id, a.is_active, a.is_system, a.level, a.allow_posting, a.currency,
                p.name AS parent_name
         FROM accounts a
         LEFT JOIN accounts p ON p.id = a.parent_id
@@ -242,6 +242,7 @@ def _display_df(
         display["상위계정"] = level_df["parent_name"].fillna("").astype(str)
 
     display["전표허용"] = level_df["전표허용"].astype(str)
+    display["통화"] = level_df["currency"].fillna("KRW").astype(str)
     if include_active:
         display["활성"] = level_df["활성"].astype(str)
     display["⋯"] = NO_ACTION
@@ -268,14 +269,13 @@ def _render_aggrid(
     builder.configure_column("id", hide=True)
 
     # 체크박스 컬럼 설정
-    checkbox_col = "계정명" if "계정명" in df.columns else df.columns[0]
+    checkbox_col = "계정ID" if "계정ID" in df.columns else df.columns[0]
     builder.configure_column(
         checkbox_col,
         checkboxSelection=True,
         headerCheckboxSelection=True,
         headerCheckboxSelectionFilteredOnly=False,
         pinned="left",
-        width=260 if checkbox_col == "계정명" else None,
     )
 
     builder.configure_selection(
@@ -307,12 +307,15 @@ def _render_aggrid(
             width=120,
         )
 
+    refresh_token = st.session_state.get("grid_refresh_token", 0)
+    grid_key = f"{_grid_key(level, type_, parent_ids)}_{refresh_token}"
+
     try:
         grid_response = AgGrid(
             df,
             gridOptions=builder.build(),
             height=height,
-            key=_grid_key(level, type_, parent_ids),
+            key=grid_key,
             data_return_mode=DataReturnMode.AS_INPUT,
             update_mode=GridUpdateMode.VALUE_CHANGED | GridUpdateMode.SELECTION_CHANGED,
             allow_unsafe_jscode=True,
@@ -366,50 +369,90 @@ def _render_aggrid(
 def _dialog_create_child(type_: str, parent_id: int) -> None:
     st.caption("상위 계정은 시스템(Level 1) 집계 계정이어야 합니다.")
 
-    name = st.text_input("계정명")
-    is_active = st.checkbox("활성", value=True)
-    st.selectbox("통화", ["KRW", "USD", "JPY", "EUR"], key="new_acc_currency")
+    with st.form("add_account_form"):
+        name = st.text_input("계정명")
+        is_active = st.checkbox("활성", value=True)
+        currency = st.selectbox("통화", ["KRW", "USD", "JPY", "EUR"])
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("생성", type="primary"):
-            try:
-                create_user_account(
-                    conn,
-                    name=name,
-                    type_=type_,
-                    parent_id=int(parent_id),
-                    is_active=bool(is_active),
-                    currency=st.session_state.get("new_acc_currency", "KRW"),
-                )
-                st.success("계정을 생성했습니다.")
-                st.rerun()
-            except Exception as e:  # noqa: BLE001
-                st.error(str(e))
-    with col2:
-        if st.button("닫기"):
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("생성", type="primary")
+        with col2:
+            cancel = st.form_submit_button("닫기")
+
+    if submitted:
+        if not name.strip():
+            st.error("계정명을 입력해 주세요.")
+            return
+        try:
+            create_user_account(
+                conn,
+                name=name,
+                type_=type_,
+                parent_id=int(parent_id),
+                is_active=bool(is_active),
+                currency=currency,
+            )
+            st.session_state["grid_refresh_token"] = (
+                st.session_state.get("grid_refresh_token", 0) + 1
+            )
+            st.toast("계정이 생성되었습니다.")
             st.rerun()
+        except Exception as e:  # noqa: BLE001
+            st.error(str(e))
+
+    if cancel:
+        st.session_state["grid_refresh_token"] = (
+            st.session_state.get("grid_refresh_token", 0) + 1
+        )
+        st.rerun()
 
 
 @st.dialog("계정 편집")
-def _dialog_edit(account_id: int, current_name: str, current_active: bool) -> None:
-    name = st.text_input("계정명", value=current_name)
-    is_active = st.checkbox("활성", value=current_active)
+def _dialog_edit(
+    account_id: int, current_name: str, current_active: bool, current_currency: str
+) -> None:
+    with st.form("edit_account_form"):
+        name = st.text_input("계정명", value=current_name)
+        is_active = st.checkbox("활성", value=current_active)
+        currency = st.selectbox(
+            "기본 통화",
+            ["KRW", "USD", "JPY", "EUR"],
+            index=(
+                ["KRW", "USD", "JPY", "EUR"].index(current_currency)
+                if current_currency in ["KRW", "USD", "JPY", "EUR"]
+                else 0
+            ),
+        )
 
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("저장", type="primary"):
-            try:
-                update_user_account(
-                    conn, int(account_id), name=name, is_active=bool(is_active)
-                )
-                st.success("저장했습니다.")
-                st.rerun()
-            except Exception as e:  # noqa: BLE001
-                st.error(str(e))
-    with col2:
-        if st.button("닫기"):
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("저장", type="primary")
+        with col2:
+            cancel = st.form_submit_button("닫기")
+
+    if submitted:
+        try:
+            update_user_account(
+                conn,
+                int(account_id),
+                name=name,
+                is_active=bool(is_active),
+                currency=currency,
+            )
+            st.session_state["grid_refresh_token"] = (
+                st.session_state.get("grid_refresh_token", 0) + 1
+            )
+            st.toast("수정되었습니다.")
             st.rerun()
+        except Exception as e:  # noqa: BLE001
+            st.error(str(e))
+
+    if cancel:
+        st.session_state["grid_refresh_token"] = (
+            st.session_state.get("grid_refresh_token", 0) + 1
+        )
+        st.rerun()
 
 
 @st.dialog("계정 삭제")
@@ -422,12 +465,18 @@ def _dialog_delete(account_id: int, account_name: str) -> None:
         if st.button("삭제", type="primary"):
             try:
                 delete_user_account(conn, int(account_id))
-                st.success("삭제했습니다.")
+                st.session_state["grid_refresh_token"] = (
+                    st.session_state.get("grid_refresh_token", 0) + 1
+                )
+                st.toast("삭제되었습니다.")
                 st.rerun()
             except Exception as e:  # noqa: BLE001
                 st.error(str(e))
     with col2:
         if st.button("닫기"):
+            st.session_state["grid_refresh_token"] = (
+                st.session_state.get("grid_refresh_token", 0) + 1
+            )
             st.rerun()
 
 
@@ -448,6 +497,7 @@ def _handle_action(action: Action, account_row: dict, type_: str) -> None:
             int(account_row["id"]),
             current_name=str(account_row["name"]),
             current_active=bool(int(account_row["is_active"]) == 1),
+            current_currency=str(account_row.get("currency", "KRW")),
         )
         return
 

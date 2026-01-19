@@ -99,6 +99,7 @@ def update_user_account(
     account_id: int,
     name: str,
     is_active: bool,
+    currency: str | None = None,
 ) -> None:
     row = conn.execute(
         """
@@ -117,14 +118,29 @@ def update_user_account(
         raise ValueError("집계 계정은 수정할 수 없습니다.")
 
     with conn:
-        conn.execute(
-            """
-            UPDATE accounts
-            SET name = ?, is_active = ?
-            WHERE id = ?
-            """,
-            (name.strip(), 1 if is_active else 0, int(account_id)),
-        )
+        if currency:
+            conn.execute(
+                """
+                UPDATE accounts
+                SET name = ?, is_active = ?, currency = ?
+                WHERE id = ?
+                """,
+                (
+                    name.strip(),
+                    1 if is_active else 0,
+                    currency.upper(),
+                    int(account_id),
+                ),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE accounts
+                SET name = ?, is_active = ?
+                WHERE id = ?
+                """,
+                (name.strip(), 1 if is_active else 0, int(account_id)),
+            )
 
 
 def delete_user_account(conn: sqlite3.Connection, account_id: int) -> None:
@@ -157,6 +173,14 @@ def delete_user_account(conn: sqlite3.Connection, account_id: int) -> None:
     ).fetchone()
     if int(used["cnt"] or 0) > 0:
         raise ValueError("전표에 사용된 계정은 삭제할 수 없습니다.")
+
+    linked_asset = conn.execute(
+        "SELECT name FROM assets WHERE linked_account_id = ?", (account_id,)
+    ).fetchone()
+    if linked_asset:
+        raise ValueError(
+            f"이 계정은 자산 '{linked_asset['name']}'에 연결되어 있어 삭제할 수 없습니다. 자산을 먼저 삭제하세요."
+        )
 
     with conn:
         conn.execute("DELETE FROM accounts WHERE id = ?", (account_id,))

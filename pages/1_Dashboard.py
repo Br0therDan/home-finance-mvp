@@ -124,13 +124,40 @@ eq_df = _prep_df(bs["equity"])
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown(f"**자산 ({display_currency})**")
-    st.dataframe(assets_df, width="stretch", hide_index=True)
+    st.dataframe(
+        assets_df,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "잔액(현지)": st.column_config.NumberColumn(format="%.2f"),
+            "평가가치(표시)": st.column_config.NumberColumn(format="%.0f"),
+            "장부금액(Base)": st.column_config.NumberColumn(format="%.0f"),
+        },
+    )
 with c2:
     st.markdown(f"**부채 ({display_currency})**")
-    st.dataframe(liab_df, width="stretch", hide_index=True)
+    st.dataframe(
+        liab_df,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "잔액(현지)": st.column_config.NumberColumn(format="%.2f"),
+            "평가가치(표시)": st.column_config.NumberColumn(format="%.0f"),
+            "장부금액(Base)": st.column_config.NumberColumn(format="%.0f"),
+        },
+    )
 with c3:
     st.markdown(f"**자본 ({display_currency})**")
-    st.dataframe(eq_df, width="stretch", hide_index=True)
+    st.dataframe(
+        eq_df,
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "잔액(현지)": st.column_config.NumberColumn(format="%.2f"),
+            "평가가치(표시)": st.column_config.NumberColumn(format="%.0f"),
+            "장부금액(Base)": st.column_config.NumberColumn(format="%.0f"),
+        },
+    )
 
 st.divider()
 
@@ -150,7 +177,17 @@ expense_df = pd.DataFrame(is_["expense"], columns=["계정", "금액"])
 c1, c2 = st.columns(2)
 with c1:
     st.markdown("**수익(Income)**")
-    st.dataframe(income_df, width="stretch", hide_index=True)
+    st.dataframe(
+        income_df,
+        width="stretch",
+        hide_index=True,
+        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+    )
 with c2:
     st.markdown("**비용(Expense)**")
-    st.dataframe(expense_df, width="stretch", hide_index=True)
+    st.dataframe(
+        expense_df,
+        width="stretch",
+        hide_index=True,
+        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+    )

@@ -71,7 +71,15 @@ display_lines = lines.rename(
         "memo": "메모",
     }
 )
-st.dataframe(display_lines, width="stretch", hide_index=True)
+st.dataframe(
+    display_lines,
+    width="stretch",
+    hide_index=True,
+    column_config={
+        "차변": st.column_config.NumberColumn(format="%.0f"),
+        "대변": st.column_config.NumberColumn(format="%.0f"),
+    },
+)
 
 st.divider()
 
@@ -93,6 +101,10 @@ st.dataframe(
     tb_display[["계정", "유형", "차변", "대변"]],
     width="stretch",
     hide_index=True,
+    column_config={
+        "차변": st.column_config.NumberColumn(format="%.0f"),
+        "대변": st.column_config.NumberColumn(format="%.0f"),
+    },
 )
 
 st.caption("debit/credit은 raw_balance를 기준으로 양/음수 분리 표시한 값이다.")
