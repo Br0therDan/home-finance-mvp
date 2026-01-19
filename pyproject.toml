@@ -8,6 +8,8 @@ dependencies = [
     "pandas>=2.0.0",
     "streamlit-aggrid>=0.3.4",
     "watchdog>=6.0.0",
+    "sqlmodel>=0.0.31",
+    "alembic>=1.18.1",
 ]
 
 [build-system]

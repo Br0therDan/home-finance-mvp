@@ -4,8 +4,9 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from sqlmodel import Session
 
-from core.db import apply_migrations, get_connection
+from core.db import engine
 from core.services.ledger_service import (
     balance_sheet,
     income_statement,
@@ -15,15 +16,14 @@ from core.ui.formatting import fmt, krw
 
 st.set_page_config(page_title="Reports", page_icon="📈", layout="wide")
 
-conn = get_connection()
-apply_migrations(conn)
+session = Session(engine)
 
 st.title("리포트")
 
 st.subheader("재무상태표(BS)")
 as_of = st.date_input("기준일", value=date.today())
 display_currency = st.session_state.get("display_currency", "KRW")
-bs = balance_sheet(conn, as_of=as_of, display_currency=display_currency)
+bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
 
 
 def _prep_bs_df(items):
@@ -90,7 +90,7 @@ with col1:
 with col2:
     end = st.date_input("종료일", value=as_of, key="is_end")
 
-is_ = income_statement(conn, start=start, end=end)
+is_ = income_statement(session, start=start, end=end)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("총 수익", krw(is_["total_income"]))
@@ -120,7 +120,7 @@ st.divider()
 
 st.subheader("월별 현금 변화(Cashflow proxy)")
 year = st.number_input("연도", min_value=2000, max_value=2100, value=as_of.year, step=1)
-cf = monthly_cashflow(conn, year=int(year))
+cf = monthly_cashflow(session, year=int(year))
 cf_df = pd.DataFrame(cf)
 
 if len(cf_df) == 0:

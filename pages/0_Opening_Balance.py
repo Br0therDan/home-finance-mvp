@@ -4,9 +4,10 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from sqlmodel import Session, desc, select
 
-from core.db import apply_migrations, get_connection
-from core.models import JournalLine
+from core.db import engine
+from core.models import Account, JournalEntry, JournalLine
 from core.services.ledger_service import (
     create_opening_balance_entry,
     delete_opening_balance_entry,
@@ -18,16 +19,16 @@ from core.services.ledger_service import (
 
 st.set_page_config(page_title="Day0 Setup", page_icon="🧭", layout="wide")
 
-conn = get_connection()
-apply_migrations(conn)
+# DB Session
+session = Session(engine)
 
 st.title("Day0 기초 잔액 설정")
 st.caption(
     "과거 거래 복원 없이 오늘 기준 기초자산/부채를 입력해 OPENING_BALANCE 전표를 생성합니다."
 )
 
-accounts = list_accounts(conn, active_only=True)
-posting_accounts = list_posting_accounts(conn, active_only=True)
+accounts = list_accounts(session, active_only=True)
+posting_accounts = list_posting_accounts(session, active_only=True)
 asset_accounts = [
     (a["id"], a["name"]) for a in posting_accounts if a["type"] == "ASSET"
 ]
@@ -40,42 +41,44 @@ if len(asset_accounts) == 0:
     st.stop()
 
 opening_equity = get_account_by_name(
-    conn, "기초순자산", "EQUITY"
-) or get_account_by_name(conn, "기초자본(Opening Balance)", "EQUITY")
+    session, "기초순자산", "EQUITY"
+) or get_account_by_name(session, "기초자본(Opening Balance)", "EQUITY")
 
 if opening_equity is None:
     st.error("기초순자산(EQUITY) 계정이 없습니다. 마이그레이션을 먼저 적용하세요.")
     st.stop()
 
-if has_opening_balance_entry(conn):
+if has_opening_balance_entry(session):
     st.warning(
         "이미 OPENING_BALANCE 전표가 존재합니다. 재생성은 기본적으로 차단됩니다."
     )
 
-    existing = conn.execute(
-        """
-        SELECT je.id, je.entry_date, je.description
-        FROM journal_entries je
-        WHERE je.source = 'opening_balance'
-        ORDER BY je.id DESC
-        LIMIT 1
-        """
-    ).fetchone()
+    existing = session.exec(
+        select(JournalEntry)
+        .where(JournalEntry.source == "opening_balance")
+        .order_by(desc(JournalEntry.id))
+    ).first()
 
     if existing:
         st.write(
-            f"전표ID: {existing['id']} / 날짜: {existing['entry_date']} / 설명: {existing['description']}"
+            f"전표ID: {existing.id} / 날짜: {existing.entry_date} / 설명: {existing.description}"
         )
-        lines = conn.execute(
-            """
-            SELECT a.name AS account, a.type, jl.debit, jl.credit, jl.memo
-            FROM journal_lines jl
-            JOIN accounts a ON a.id = jl.account_id
-            WHERE jl.entry_id = ?
-            ORDER BY a.type, a.name
-            """,
-            (int(existing["id"]),),
-        ).fetchall()
+        # Using ORM join
+        stmt = (
+            select(
+                Account.name,
+                Account.type,
+                JournalLine.debit,
+                JournalLine.credit,
+                JournalLine.memo,
+            )
+            .join(Account, Account.id == JournalLine.account_id)
+            .where(JournalLine.entry_id == existing.id)
+            .order_by(Account.type, Account.name)
+        )
+
+        lines = session.exec(stmt).all()
+
         df = pd.DataFrame(lines, columns=["계정", "유형", "차변", "대변", "메모"])
         st.dataframe(
             df,
@@ -91,7 +94,7 @@ if has_opening_balance_entry(conn):
     st.subheader("⚠️ 초기화 후 재입력")
     st.info("기초 잔액을 수정하려면 기존 전표를 삭제하고 다시 입력해야 합니다.")
     if st.button("기존 기초 잔액 전표 삭제 및 초기화"):
-        delete_opening_balance_entry(conn)
+        delete_opening_balance_entry(session)
         st.success("초기화되었습니다. 페이지를 새로고침합니다.")
         st.rerun()
 
@@ -239,7 +242,7 @@ with st.form("opening_balance_form"):
     if submitted:
         try:
             entry_id = create_opening_balance_entry(
-                conn,
+                session,
                 entry_date=entry_date,
                 description=description or "OPENING_BALANCE",
                 asset_lines=asset_lines,

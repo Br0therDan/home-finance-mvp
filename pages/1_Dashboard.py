@@ -4,47 +4,40 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from sqlmodel import Session
 
-from core.db import apply_migrations, get_connection
+from core.db import engine
+from core.services.asset_service import list_assets
+from core.services.fx_service import get_latest_rate
 from core.services.ledger_service import balance_sheet, income_statement
 from core.services.valuation_service import ValuationService
-from core.services.fx_service import get_latest_rate
 from core.ui.formatting import fmt, krw
 
 st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
 
-conn = get_connection()
-apply_migrations(conn)
+session = Session(engine)
 
 st.title("대시보드")
 
 as_of = st.date_input("기준일", value=date.today())
 display_currency = st.session_state.get("display_currency", "KRW")
 
-bs = balance_sheet(conn, as_of=as_of, display_currency=display_currency)
+bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
 
 # --- Valuation Calculation ---
-val_service = ValuationService(conn)
+val_service = ValuationService(session)
 latest_vals = val_service.get_valuations_for_dashboard()
 valuation_total_disp = 0.0
 
 # Calculate total valuation (Fallback to Book Value if no manual valuation)
-for asset in bs["assets"]:
-    # Note: bs["assets"] contains all posting accounts in ASSET type
-    # We need to map these to our 'assets' table entries if possible
-    # For MVP, we'll try to find a manual valuation for the linked account.
-    # Actually, the 'assets' table has linked_account_id.
-    pass
-
 # Better approach: sum manual valuations + sum book values of other assets
 total_book_value_base = bs["total_assets_base"]
 
 # Get total valuation in Base Currency (KRW)
 valuation_base_total = 0.0
 # Assets from 'assets' table
-from core.services.asset_service import list_assets
 
-all_registered_assets = list_assets(conn)
+all_registered_assets = list_assets(session)
 registered_linked_ids = {
     int(a["linked_account_id"]): a["id"] for a in all_registered_assets
 }
@@ -56,7 +49,7 @@ for acc in bs["assets"]:
 
     if manual_val:
         # Convert manual valuation to Base Currency
-        rate = get_latest_rate(conn, bs["base_currency"], manual_val["currency"])
+        rate = get_latest_rate(session, bs["base_currency"], manual_val["currency"])
         valuation_base_total += manual_val["value_native"] * rate
     else:
         # Fallback to book value
@@ -164,7 +157,7 @@ st.divider()
 st.subheader("이번 달 손익(IS)")
 start = date(as_of.year, as_of.month, 1)
 end = as_of
-is_ = income_statement(conn, start=start, end=end)
+is_ = income_statement(session, start=start, end=end)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("총 수익", krw(is_["total_income"]))

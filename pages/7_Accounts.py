@@ -7,6 +7,7 @@ from typing import Literal
 
 import pandas as pd
 import streamlit as st
+from sqlmodel import Session
 
 try:
     from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
@@ -16,7 +17,7 @@ except Exception:  # noqa: BLE001
     GridOptionsBuilder = None  # type: ignore[assignment]
     JsCode = None  # type: ignore[assignment]
 
-from core.db import apply_migrations, fetch_df, get_connection
+from core.db import engine
 from core.services.account_service import (
     create_user_account,
     delete_user_account,
@@ -145,8 +146,7 @@ def _aggrid_custom_css() -> dict[str, dict[str, str]]:
 
 st.set_page_config(page_title="Accounts", page_icon="🗂️", layout="wide")
 
-conn = get_connection()
-apply_migrations(conn)
+session = Session(engine)
 
 st.title("계정과목 관리 (CoA)")
 st.caption("시스템(Level 1) 및 사용자 정의 계정을 관리합니다.")
@@ -157,16 +157,14 @@ if AgGrid is None:
 
 
 def _load_accounts_df() -> pd.DataFrame:
-    return fetch_df(
-        conn,
-        """
+    sql = """
         SELECT a.id, a.name, a.type, a.parent_id, a.is_active, a.is_system, a.level, a.allow_posting, a.currency,
                p.name AS parent_name
         FROM accounts a
         LEFT JOIN accounts p ON p.id = a.parent_id
         ORDER BY a.type, a.level, a.name
-        """,
-    )
+    """
+    return pd.read_sql(sql, session.connection())
 
 
 def _format_section(section: pd.DataFrame) -> pd.DataFrame:
@@ -386,7 +384,7 @@ def _dialog_create_child(type_: str, parent_id: int) -> None:
             return
         try:
             create_user_account(
-                conn,
+                session,
                 name=name,
                 type_=type_,
                 parent_id=int(parent_id),
@@ -434,7 +432,7 @@ def _dialog_edit(
     if submitted:
         try:
             update_user_account(
-                conn,
+                session,
                 int(account_id),
                 name=name,
                 is_active=bool(is_active),
@@ -464,7 +462,7 @@ def _dialog_delete(account_id: int, account_name: str) -> None:
     with col1:
         if st.button("삭제", type="primary"):
             try:
-                delete_user_account(conn, int(account_id))
+                delete_user_account(session, int(account_id))
                 st.session_state["grid_refresh_token"] = (
                     st.session_state.get("grid_refresh_token", 0) + 1
                 )

@@ -1,6 +1,7 @@
 import streamlit as st
+from sqlmodel import Session
 
-from core.db import apply_migrations, get_connection
+from core.db import engine
 
 
 def main():
@@ -10,9 +11,10 @@ def main():
         layout="wide",
     )
 
-    # DB init
-    conn = get_connection()
-    apply_migrations(conn)
+    # DB Session
+    # In a full web app, we'd use a dependency injection or context middleware.
+    # In Streamlit, we can just create a session.
+    session = Session(engine)
 
     st.title("Home Finance MVP")
     st.caption("Streamlit + SQLite 기반 가정용 자산/기장 관리 MVP")
@@ -20,7 +22,7 @@ def main():
     # Sidebar: Display Currency Settings
     from core.services.settings_service import get_base_currency
 
-    base_cur = get_base_currency(conn)
+    base_cur = get_base_currency(session)
 
     st.sidebar.header("표시 통화 설정")
     display_currency = st.sidebar.selectbox(

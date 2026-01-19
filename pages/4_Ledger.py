@@ -4,14 +4,14 @@ from datetime import date
 
 import pandas as pd
 import streamlit as st
+from sqlmodel import Session
 
-from core.db import apply_migrations, fetch_df, get_connection
+from core.db import engine
 from core.services.ledger_service import trial_balance
 
 st.set_page_config(page_title="Ledger", page_icon="📚", layout="wide")
 
-conn = get_connection()
-apply_migrations(conn)
+session = Session(engine)
 
 st.title("원장 / 시산표")
 
@@ -22,15 +22,15 @@ with c2:
     end = st.date_input("종료일", value=date.today())
 
 st.subheader("전표 목록")
-entries = fetch_df(
-    conn,
-    """
+
+sql_entries = """
     SELECT id, entry_date, description, source
     FROM journal_entries
     WHERE entry_date >= ? AND entry_date <= ?
     ORDER BY entry_date DESC, id DESC
-    """,
-    params=(start.isoformat(), end.isoformat()),
+"""
+entries = pd.read_sql(
+    sql_entries, session.connection(), params=(start.isoformat(), end.isoformat())
 )
 
 display_entries = entries.rename(
@@ -44,9 +44,8 @@ display_entries = entries.rename(
 st.dataframe(display_entries, width="stretch", hide_index=True)
 
 st.subheader("전표 라인")
-lines = fetch_df(
-    conn,
-    """
+
+sql_lines = """
     SELECT je.entry_date, je.id AS entry_id, je.description,
            a.name AS account, a.type,
            jl.debit, jl.credit, jl.memo
@@ -55,8 +54,9 @@ lines = fetch_df(
     JOIN accounts a ON a.id = jl.account_id
     WHERE je.entry_date >= ? AND je.entry_date <= ?
     ORDER BY je.entry_date DESC, je.id DESC
-    """,
-    params=(start.isoformat(), end.isoformat()),
+"""
+lines = pd.read_sql(
+    sql_lines, session.connection(), params=(start.isoformat(), end.isoformat())
 )
 
 display_lines = lines.rename(
@@ -86,25 +86,28 @@ st.divider()
 st.subheader("시산표(Trial Balance) - 기준일")
 as_of = st.date_input("시산표 기준일", value=end)
 
-tb = trial_balance(conn, as_of=as_of)
+tb = trial_balance(session, as_of=as_of)
 tb_df = pd.DataFrame(tb)
 
 # show only non-zero by default
 show_zero = st.checkbox("0 잔액 계정도 표시", value=False)
-if not show_zero:
+if not tb_df.empty and not show_zero:
     tb_df = tb_df[(tb_df["debit"].abs() > 1e-9) | (tb_df["credit"].abs() > 1e-9)]
 
-tb_display = tb_df.rename(
-    columns={"account": "계정", "type": "유형", "debit": "차변", "credit": "대변"}
-)
-st.dataframe(
-    tb_display[["계정", "유형", "차변", "대변"]],
-    width="stretch",
-    hide_index=True,
-    column_config={
-        "차변": st.column_config.NumberColumn(format="%.0f"),
-        "대변": st.column_config.NumberColumn(format="%.0f"),
-    },
-)
+if not tb_df.empty:
+    tb_display = tb_df.rename(
+        columns={"account": "계정", "type": "유형", "debit": "차변", "credit": "대변"}
+    )
+    st.dataframe(
+        tb_display[["계정", "유형", "차변", "대변"]],
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "차변": st.column_config.NumberColumn(format="%.0f"),
+            "대변": st.column_config.NumberColumn(format="%.0f"),
+        },
+    )
+else:
+    st.info("표시할 시산표 데이터가 없습니다.")
 
 st.caption("debit/credit은 raw_balance를 기준으로 양/음수 분리 표시한 값이다.")
