@@ -12,6 +12,7 @@ from core.services.ledger_service import (
     get_account_by_name,
     has_opening_balance_entry,
     list_accounts,
+    list_posting_accounts,
 )
 
 st.set_page_config(page_title="Day0 Setup", page_icon="🧭", layout="wide")
@@ -25,8 +26,17 @@ st.caption(
 )
 
 accounts = list_accounts(conn, active_only=True)
-asset_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "ASSET"]
-liab_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "LIABILITY"]
+posting_accounts = list_posting_accounts(conn, active_only=True)
+asset_accounts = [
+    (a["id"], a["name"]) for a in posting_accounts if a["type"] == "ASSET"
+]
+liab_accounts = [
+    (a["id"], a["name"]) for a in posting_accounts if a["type"] == "LIABILITY"
+]
+
+if len(asset_accounts) == 0:
+    st.info("자산 하위(Posting) 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요.")
+    st.stop()
 
 opening_equity = get_account_by_name(
     conn, "기초순자산", "EQUITY"
@@ -88,14 +98,14 @@ with st.form("opening_balance_form"):
         a1, a2 = st.columns([3, 2])
         with a1:
             st.selectbox(
-                f"자산 계정 #{i+1}",
+                f"자산 계정 #{i + 1}",
                 options=asset_accounts,
                 format_func=lambda x: x[1],
                 key=f"asset_account_{i}",
             )
         with a2:
             st.number_input(
-                f"금액 #{i+1}",
+                f"금액 #{i + 1}",
                 min_value=0.0,
                 step=10000.0,
                 value=0.0,
@@ -111,14 +121,14 @@ with st.form("opening_balance_form"):
         l1, l2 = st.columns([3, 2])
         with l1:
             st.selectbox(
-                f"부채 계정 #{i+1}",
+                f"부채 계정 #{i + 1}",
                 options=liab_accounts,
                 format_func=lambda x: x[1],
                 key=f"liab_account_{i}",
             )
         with l2:
             st.number_input(
-                f"금액 #{i+1}",
+                f"금액 #{i + 1}",
                 min_value=0.0,
                 step=10000.0,
                 value=0.0,
@@ -157,27 +167,27 @@ with st.form("opening_balance_form"):
     preview_rows = []
     total_debit = 0.0
     total_credit = 0.0
-    for l in asset_lines:
+    for line in asset_lines:
         preview_rows.append(
             {
-                "계정": account_name.get(l.account_id, str(l.account_id)),
-                "차변": l.debit,
+                "계정": account_name.get(line.account_id, str(line.account_id)),
+                "차변": line.debit,
                 "대변": 0.0,
                 "구분": "자산",
             }
         )
-        total_debit += l.debit
+        total_debit += line.debit
 
-    for l in liability_lines:
+    for line in liability_lines:
         preview_rows.append(
             {
-                "계정": account_name.get(l.account_id, str(l.account_id)),
+                "계정": account_name.get(line.account_id, str(line.account_id)),
                 "차변": 0.0,
-                "대변": l.credit,
+                "대변": line.credit,
                 "구분": "부채",
             }
         )
-        total_credit += l.credit
+        total_credit += line.credit
 
     gap = total_debit - total_credit
     if abs(gap) > 1e-9:

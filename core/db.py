@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 APP_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "app.db"
 MIGRATIONS_DIR = Path(__file__).resolve().parents[1] / "migrations"

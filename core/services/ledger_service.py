@@ -2,34 +2,57 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
-from typing import Dict, List, Tuple
 
 from core.models import JournalEntryInput, JournalLine
 
 
-def _validate_entry(lines: List[JournalLine]) -> None:
+def _validate_entry(lines: list[JournalLine]) -> None:
     if not lines or len(lines) < 2:
         raise ValueError("A journal entry must have at least 2 lines.")
 
-    total_debit = sum(max(0.0, float(l.debit)) for l in lines)
-    total_credit = sum(max(0.0, float(l.credit)) for l in lines)
+    total_debit = sum(max(0.0, float(line.debit)) for line in lines)
+    total_credit = sum(max(0.0, float(line.credit)) for line in lines)
 
     if round(total_debit, 2) != round(total_credit, 2):
         raise ValueError(
             f"Unbalanced entry: debit={total_debit:.2f}, credit={total_credit:.2f}"
         )
 
-    for l in lines:
-        if l.debit < 0 or l.credit < 0:
+    for line in lines:
+        if line.debit < 0 or line.credit < 0:
             raise ValueError("Debit/Credit cannot be negative.")
-        if l.debit > 0 and l.credit > 0:
+        if line.debit > 0 and line.credit > 0:
             raise ValueError("A single line cannot have both debit and credit.")
-        if l.debit == 0 and l.credit == 0:
+        if line.debit == 0 and line.credit == 0:
             raise ValueError("A line must have a debit or credit amount.")
+
+
+def _validate_posting_accounts(
+    conn: sqlite3.Connection, lines: list[JournalLine]
+) -> None:
+    account_ids = list({int(line.account_id) for line in lines})
+    if not account_ids:
+        raise ValueError("At least one journal line is required.")
+
+    placeholders = ",".join(["?"] * len(account_ids))
+    rows = conn.execute(
+        f"SELECT id, allow_posting FROM accounts WHERE id IN ({placeholders})",
+        tuple(account_ids),
+    ).fetchall()
+    allow_map = {int(r["id"]): int(r["allow_posting"]) for r in rows}
+
+    for account_id in account_ids:
+        if account_id not in allow_map:
+            raise ValueError("Account not found.")
+        if allow_map[account_id] != 1:
+            raise ValueError(
+                "상위(집계) 계정에는 직접 분개할 수 없습니다. 하위 계정을 선택하세요."
+            )
 
 
 def create_journal_entry(conn: sqlite3.Connection, entry: JournalEntryInput) -> int:
     _validate_entry(entry.lines)
+    _validate_posting_accounts(conn, entry.lines)
 
     with conn:
         cur = conn.execute(
@@ -47,8 +70,14 @@ def create_journal_entry(conn: sqlite3.Connection, entry: JournalEntryInput) -> 
             VALUES (?, ?, ?, ?, ?)
             """,
             [
-                (entry_id, l.account_id, float(l.debit), float(l.credit), l.memo)
-                for l in entry.lines
+                (
+                    entry_id,
+                    line.account_id,
+                    float(line.debit),
+                    float(line.credit),
+                    line.memo,
+                )
+                for line in entry.lines
             ],
         )
 
@@ -56,10 +85,26 @@ def create_journal_entry(conn: sqlite3.Connection, entry: JournalEntryInput) -> 
 
 
 def list_accounts(conn: sqlite3.Connection, active_only: bool = True):
-    q = "SELECT id, name, type, parent_id, is_active FROM accounts"
-    params: Tuple = ()
+    q = """
+    SELECT id, name, type, parent_id, is_active, is_system, level, allow_posting
+    FROM accounts
+    """
+    params: tuple = ()
     if active_only:
         q += " WHERE is_active = 1"
+    q += " ORDER BY type, name"
+    return conn.execute(q, params).fetchall()
+
+
+def list_posting_accounts(conn: sqlite3.Connection, active_only: bool = True):
+    q = """
+    SELECT id, name, type, parent_id, is_active, is_system, level, allow_posting
+    FROM accounts
+    WHERE allow_posting = 1
+    """
+    params: tuple = ()
+    if active_only:
+        q += " AND is_active = 1"
     q += " ORDER BY type, name"
     return conn.execute(q, params).fetchall()
 
@@ -95,38 +140,44 @@ def create_opening_balance_entry(
     conn: sqlite3.Connection,
     entry_date: date,
     description: str,
-    asset_lines: List[JournalLine],
-    liability_lines: List[JournalLine],
+    asset_lines: list[JournalLine],
+    liability_lines: list[JournalLine],
 ) -> int:
     if has_opening_balance_entry(conn):
         raise ValueError("OPENING_BALANCE entry already exists.")
 
-    lines: List[JournalLine] = []
-    for l in asset_lines:
-        if l.debit < 0 or l.credit < 0:
+    lines: list[JournalLine] = []
+    for line in asset_lines:
+        if line.debit < 0 or line.credit < 0:
             raise ValueError("Amount cannot be negative.")
-        if l.debit > 0:
+        if line.debit > 0:
             lines.append(
                 JournalLine(
-                    account_id=l.account_id, debit=l.debit, credit=0.0, memo=l.memo
+                    account_id=line.account_id,
+                    debit=line.debit,
+                    credit=0.0,
+                    memo=line.memo,
                 )
             )
 
-    for l in liability_lines:
-        if l.debit < 0 or l.credit < 0:
+    for line in liability_lines:
+        if line.debit < 0 or line.credit < 0:
             raise ValueError("Amount cannot be negative.")
-        if l.credit > 0:
+        if line.credit > 0:
             lines.append(
                 JournalLine(
-                    account_id=l.account_id, debit=0.0, credit=l.credit, memo=l.memo
+                    account_id=line.account_id,
+                    debit=0.0,
+                    credit=line.credit,
+                    memo=line.memo,
                 )
             )
 
     if not lines:
         raise ValueError("At least one opening balance line is required.")
 
-    total_debit = sum(float(l.debit) for l in lines)
-    total_credit = sum(float(l.credit) for l in lines)
+    total_debit = sum(float(line.debit) for line in lines)
+    total_credit = sum(float(line.credit) for line in lines)
 
     equity = get_account_by_name(conn, "기초순자산", "EQUITY")
     if equity is None:
@@ -166,9 +217,9 @@ def create_opening_balance_entry(
 
 def account_balances(
     conn: sqlite3.Connection, as_of: date | None = None
-) -> Dict[int, float]:
+) -> dict[int, float]:
     """Return raw balance = sum(debit - credit) per account."""
-    params: List = []
+    params: list[str] = []
     where = ""
     if as_of is not None:
         where = "WHERE je.entry_date <= ?"

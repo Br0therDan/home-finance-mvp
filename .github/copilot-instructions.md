@@ -11,10 +11,16 @@ A household finance & asset management MVP built with:
 - **Accounting model**: Minimal **double-entry ledger** (Journal Entries + Journal Lines)
 - **Key capabilities**
   - Transaction input (cashbook UX) → auto-generated journal entries (balanced)
+  - Day0 Opening Balance input → auto-generated opening balance journal entry
   - Ledger browsing + trial balance
   - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple)
   - Asset register + valuation history
   - Settings: Chart of Accounts (CoA)
+
+### Chart of Accounts Operating Model
+
+- **Level 1 (System)**: taxonomy/aggregation only, read-only, direct posting not allowed
+- **Level 2+ (User)**: actual posting accounts (journal lines must use `allow_posting = 1`)
 
 ## Ground Rules (Non-negotiable)
 
@@ -51,6 +57,7 @@ A household finance & asset management MVP built with:
 
 - `pages/`  
   Streamlit pages:
+  - `0_Opening_Balance.py` (Day0 opening balance → auto-journal)
   - `1_Dashboard.py`
   - `2_Transactions.py` (cashbook UX → auto-journal core path)
   - `3_Assets.py`
@@ -60,6 +67,9 @@ A household finance & asset management MVP built with:
 
 - `core/db.py`  
   SQLite connection helpers + migration runner.
+
+- `core/services/account_service.py`
+  CoA CRUD helpers + system/user account guardrails.
 
 - `core/services/ledger_service.py`  
   Ledger write validation + balance checks + basic derived calculations.
@@ -78,10 +88,17 @@ A household finance & asset management MVP built with:
 ## Coding Conventions
 
 ### Python
-- Python 3.11+ preferred
+- Python 3.12+ preferred (see `pyproject.toml`)
 - Use type hints for service functions.
 - Avoid global state; Streamlit session state is allowed for UI caching only.
 - Centralize DB access in `core/db.py`.
+
+### Code Quality (Required)
+
+After *any* code changes:
+
+1. Run `uv run ruff check .` and fix all reported issues
+2. Run `uv run ruff format .`
 
 ### SQLite & Queries
 - Use parameterized queries everywhere (avoid string interpolation).
@@ -90,7 +107,7 @@ A household finance & asset management MVP built with:
 ### Streamlit UI
 - Keep UI logic in `pages/*`.
 - Keep business logic in `core/services/*`.
-- For new UI components, add to `core/ui/components.py`.
+- Prefer small shared helpers under `ui/` when needed (e.g., formatting helpers).
 
 ---
 
@@ -98,6 +115,7 @@ A household finance & asset management MVP built with:
 
 **accounts**
 - id, name, type (ASSET/LIABILITY/EQUITY/INCOME/EXPENSE), parent_id, is_active
+- flags for CoA levels: is_system, level, allow_posting
 
 **journal_entries**
 - id, date, description, source, created_at
@@ -199,6 +217,8 @@ A change is considered done when:
 - DB migrations apply cleanly on an empty DB
 - Ledger remains balanced for all new flows
 - README remains accurate (update if behavior changes)
+- `uv run ruff check .` passes
+- `uv run ruff format .` applied
 
 ---
 
@@ -212,5 +232,8 @@ When working on this repo, always:
 5. Add a migration if schema changes.
 6. Run locally:
    - `uv sync`
+  - `uv run ruff check .`
+  - `uv run ruff format .`
+  - `uv run pytest -q`
    - `streamlit run app.py`
 7. Summarize what changed and why.

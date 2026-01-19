@@ -13,7 +13,7 @@ from core.services.asset_service import (
     list_assets,
     valuation_history,
 )
-from core.services.ledger_service import account_balances, list_accounts
+from core.services.ledger_service import account_balances, list_posting_accounts
 
 st.set_page_config(page_title="Assets", page_icon="🏠", layout="wide")
 
@@ -23,8 +23,11 @@ apply_migrations(conn)
 st.title("자산대장")
 st.caption("유/무형 자산을 등록하고 평가(valuation) 이력을 관리한다.")
 
-accounts = list_accounts(conn, active_only=True)
+accounts = list_posting_accounts(conn, active_only=True)
 asset_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "ASSET"]
+
+if len(asset_accounts) == 0:
+    st.info("자산 하위(Posting) 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요.")
 
 with st.expander("자산 등록", expanded=True):
     with st.form("asset_form", clear_on_submit=True):

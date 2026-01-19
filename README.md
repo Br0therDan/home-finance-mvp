@@ -118,6 +118,9 @@ home-finance-mvp/
 - type: ASSET / LIABILITY / EQUITY / INCOME / EXPENSE
 - parent_id (계층형 확장 용)
 - is_active
+- is_system (Level 1 시스템 계정 여부)
+- level (계정 레벨: 시스템=1, 사용자=2+)
+- allow_posting (직접 분개 허용 여부)
 
 ### journal_entries (전표 헤더)
 - id
@@ -169,6 +172,11 @@ home-finance-mvp/
 ---
 
 ## 7) 사용 팁
+
+### L1/L2 계정 구조
+- L1(시스템 계정)은 **집계 전용**이며 직접 분개 불가
+- 실제 거래/오프닝밸런스는 L2(하위) 계정에만 기록
+- 설정에서 L2 계정을 먼저 만든 뒤 거래 입력을 시작한다
 
 ### Day0 시작 방식
 1) 좌측 사이드바에서 **Day0 기초 잔액 설정** 페이지로 이동
