@@ -134,8 +134,18 @@ After *any* code changes:
 **assets**
 - id, name, asset_class, linked_account_id, acquisition_date, acquisition_cost, disposal_date, note
 
-**valuations**
-- id, asset_id, date, value, method
+**asset_valuations**
+- id, asset_id, as_of_date, value_native, currency, method, fx_rate
+
+**investment_profiles**
+- id, asset_id, ticker, exchange, trading_currency, security_type, isin, broker
+
+**investment_lots**
+- id, asset_id, lot_date, quantity, remaining_quantity, unit_price_native, fees_native, currency, fx_rate
+
+**investment_events**
+- id, asset_id, event_type, event_date, quantity, price_per_unit_native, gross_amount_native
+- fees_native, currency, fx_rate, cash_account_id, income_account_id, fee_account_id, journal_entry_id
 
 ---
 

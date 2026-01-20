@@ -100,18 +100,88 @@ class Asset(SQLModel, table=True):
         back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
+    investment_profile: "core.models.InvestmentProfile | None" = Relationship(
+        back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    investment_lots: list["core.models.InvestmentLot"] = Relationship(
+        back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    investment_events: list["core.models.InvestmentEvent"] = Relationship(
+        back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class InvestmentProfile(SQLModel, table=True):
+    __tablename__ = "investment_profiles"
+    __table_args__ = {"extend_existing": True}
+
+    id: int | None = Field(default=None, primary_key=True)
+    asset_id: int = Field(foreign_key="assets.id", index=True, unique=True)
+    ticker: str = Field(index=True)
+    exchange: str | None = Field(default=None, index=True)
+    trading_currency: str
+    security_type: str | None = Field(default=None)
+    isin: str | None = Field(default=None, index=True)
+    broker: str | None = Field(default=None)
+
+    asset: "core.models.Asset" = Relationship(back_populates="investment_profile")
+
+
+class InvestmentLot(SQLModel, table=True):
+    __tablename__ = "investment_lots"
+    __table_args__ = {"extend_existing": True}
+
+    id: int | None = Field(default=None, primary_key=True)
+    asset_id: int = Field(foreign_key="assets.id", index=True)
+    lot_date: date = Field(index=True)
+    quantity: float
+    remaining_quantity: float
+    unit_price_native: float
+    fees_native: float = Field(default=0.0)
+    currency: str
+    fx_rate: float | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+
+    asset: "core.models.Asset" = Relationship(back_populates="investment_lots")
+
+
+class InvestmentEvent(SQLModel, table=True):
+    __tablename__ = "investment_events"
+    __table_args__ = {"extend_existing": True}
+
+    id: int | None = Field(default=None, primary_key=True)
+    asset_id: int = Field(foreign_key="assets.id", index=True)
+    event_type: str = Field(index=True)
+    event_date: date = Field(index=True)
+    quantity: float | None = Field(default=None)
+    price_per_unit_native: float | None = Field(default=None)
+    gross_amount_native: float | None = Field(default=None)
+    fees_native: float = Field(default=0.0)
+    currency: str
+    fx_rate: float | None = Field(default=None)
+    cash_account_id: int | None = Field(default=None, foreign_key="accounts.id")
+    income_account_id: int | None = Field(default=None, foreign_key="accounts.id")
+    fee_account_id: int | None = Field(default=None, foreign_key="accounts.id")
+    journal_entry_id: int | None = Field(default=None, foreign_key="journal_entries.id")
+    note: str | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.now, index=True)
+
+    asset: "core.models.Asset" = Relationship(back_populates="investment_events")
+
 
 class AssetValuation(SQLModel, table=True):
     __tablename__ = "asset_valuations"
     __table_args__ = {"extend_existing": True}
 
     id: int | None = Field(default=None, primary_key=True)
-    asset_id: int = Field(foreign_key="assets.id")
-    as_of_date: date
+    asset_id: int = Field(foreign_key="assets.id", index=True)
+    as_of_date: date = Field(index=True)
     value_native: float
     currency: str
+    method: str = Field(default="market")
     note: str | None = Field(default=None)
     source: str = Field(default="manual")
+    fx_rate: float | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
