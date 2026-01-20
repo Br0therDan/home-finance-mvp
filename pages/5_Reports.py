@@ -47,8 +47,7 @@ def _prep_bs_df(items):
 
 assets_df = _prep_bs_df(bs["assets"])
 liab_df = _prep_bs_df(bs["liabilities"])
-eq_df = _prep_df(bs["equity"]) if "_prep_df" in globals() else _prep_bs_df(bs["equity"])
-# My previous code used _prep_bs_df.
+eq_df = _prep_bs_df(bs["equity"])
 
 
 col1, col2, col3 = st.columns(3)

@@ -22,6 +22,7 @@ A household finance & asset management MVP built with:
   - Ledger browsing + trial balance
   - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple; cash-equivalent account name filter)
   - IS/Cashflow reports follow the configured base currency (default KRW)
+  - Recurring schedule (subscriptions) + cashflow projections + optional auto-journals
   - Asset register + valuation history
   - Settings: Chart of Accounts (CoA)
 
@@ -148,6 +149,10 @@ After *any* code changes:
 **investment_events**
 - id, asset_id, event_type, event_date, quantity, price_per_unit_native, gross_amount_native
 - fees_native, currency, fx_rate, cash_account_id, income_account_id, fee_account_id, journal_entry_id
+
+**subscriptions**
+- id, name, cadence, interval, next_due_date, amount
+- debit_account_id, credit_account_id, memo, is_active, auto_create_journal, last_run_date
 
 ---
 

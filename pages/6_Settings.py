@@ -5,7 +5,6 @@ from core.db import engine
 from core.services.fx_service import get_latest_rate, save_rate
 from core.services.settings_service import get_base_currency, set_base_currency
 
-
 st.set_page_config(page_title="Settings", page_icon="⚙️", layout="wide")
 
 session = Session(engine)

@@ -85,10 +85,7 @@ if ttype == "지출(Expense)":
         format_func=lambda x: x[1],
     )
     # Default currency from payment account
-    if pay:
-        target_currency = pay[8] if len(pay) > 8 else base_cur
-    else:
-        target_currency = base_cur
+    target_currency = (pay[8] if len(pay) > 8 else base_cur) if pay else base_cur
 
 elif ttype == "수입(Income)":
     inc = st.selectbox(
@@ -97,10 +94,7 @@ elif ttype == "수입(Income)":
     recv = st.selectbox(
         "입금 계정(현금/예금)", options=asset_accounts, format_func=lambda x: x[1]
     )
-    if recv:
-        target_currency = recv[8] if len(recv) > 8 else base_cur
-    else:
-        target_currency = base_cur
+    target_currency = (recv[8] if len(recv) > 8 else base_cur) if recv else base_cur
 
 else:  # 이체(Transfer)
     from_acct = st.selectbox(
@@ -127,7 +121,7 @@ target_cfg = get_currency_config(target_currency)
 with st.form("txn_form_rest", clear_on_submit=True):
     is_base_int = base_cfg["precision"] == 0
     base_step = int(base_cfg["step"]) if is_base_int else float(base_cfg["step"])
-    base_val = int(0) if is_base_int else 0.0
+    base_val = 0 if is_base_int else 0.0
 
     amount_base = st.number_input(
         f"장부 금액 ({base_cur})",
@@ -151,7 +145,7 @@ with st.form("txn_form_rest", clear_on_submit=True):
             tgt_step = (
                 int(target_cfg["step"]) if is_tgt_int else float(target_cfg["step"])
             )
-            tgt_val = int(0) if is_tgt_int else 0.0
+            tgt_val = 0 if is_tgt_int else 0.0
 
             native_amount = st.number_input(
                 f"외화 금액 ({target_currency})",

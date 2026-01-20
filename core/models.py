@@ -59,10 +59,10 @@ class JournalLine(SQLModel, table=True):
     native_currency: str | None = Field(default=None)
     fx_rate: float | None = Field(default=None)
 
-    entry: "core.models.JournalEntry" = Relationship(back_populates="lines")
+    entry: "JournalEntry" = Relationship(back_populates="lines")
 
     # Unidirectional relationship to Account (no back_populates on Account)
-    account: "core.models.Account" = Relationship()
+    account: "Account" = Relationship()
 
 
 class JournalEntry(SQLModel, table=True):
@@ -75,7 +75,7 @@ class JournalEntry(SQLModel, table=True):
     source: str = Field(default="manual")
     created_at: datetime = Field(default_factory=datetime.now)
 
-    lines: list["core.models.JournalLine"] = Relationship(
+    lines: list["JournalLine"] = Relationship(
         back_populates="entry", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -94,19 +94,19 @@ class Asset(SQLModel, table=True):
     note: str = Field(default="")
 
     # Unidirectional relationship to Account (no back_populates on Account)
-    linked_account: "core.models.Account" = Relationship()
+    linked_account: "Account" = Relationship()
 
-    valuations: list["core.models.AssetValuation"] = Relationship(
+    valuations: list["AssetValuation"] = Relationship(
         back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
-    investment_profile: "core.models.InvestmentProfile | None" = Relationship(
+    investment_profile: "InvestmentProfile" = Relationship(
         back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    investment_lots: list["core.models.InvestmentLot"] = Relationship(
+    investment_lots: list["InvestmentLot"] = Relationship(
         back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    investment_events: list["core.models.InvestmentEvent"] = Relationship(
+    investment_events: list["InvestmentEvent"] = Relationship(
         back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -124,7 +124,7 @@ class InvestmentProfile(SQLModel, table=True):
     isin: str | None = Field(default=None, index=True)
     broker: str | None = Field(default=None)
 
-    asset: "core.models.Asset" = Relationship(back_populates="investment_profile")
+    asset: "Asset" = Relationship(back_populates="investment_profile")
 
 
 class InvestmentLot(SQLModel, table=True):
@@ -142,7 +142,7 @@ class InvestmentLot(SQLModel, table=True):
     fx_rate: float | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now, index=True)
 
-    asset: "core.models.Asset" = Relationship(back_populates="investment_lots")
+    asset: "Asset" = Relationship(back_populates="investment_lots")
 
 
 class InvestmentEvent(SQLModel, table=True):
@@ -166,7 +166,27 @@ class InvestmentEvent(SQLModel, table=True):
     note: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=datetime.now, index=True)
 
-    asset: "core.models.Asset" = Relationship(back_populates="investment_events")
+    asset: "Asset" = Relationship(back_populates="investment_events")
+
+
+class Subscription(SQLModel, table=True):
+    __tablename__ = "subscriptions"
+    __table_args__ = {"extend_existing": True}
+
+    id: int | None = Field(default=None, primary_key=True)
+    name: str
+    cadence: str = Field(index=True)
+    interval: int = Field(default=1)
+    next_due_date: date = Field(index=True)
+    amount: float
+    debit_account_id: int = Field(foreign_key="accounts.id")
+    credit_account_id: int = Field(foreign_key="accounts.id")
+    memo: str = Field(default="")
+    is_active: bool = Field(default=True)
+    auto_create_journal: bool = Field(default=False)
+    last_run_date: date | None = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 
 class AssetValuation(SQLModel, table=True):
@@ -185,7 +205,7 @@ class AssetValuation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    asset: "core.models.Asset" = Relationship(back_populates="valuations")
+    asset: "Asset" = Relationship(back_populates="valuations")
 
 
 class JournalEntryInput(BaseModel):

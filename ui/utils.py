@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import streamlit as st
-
 CURRENCY_CONFIG = {
     "KRW": {"symbol": "₩", "format": "%d", "step": 1, "precision": 0},
     "USD": {"symbol": "$", "format": "%.2f", "step": 0.01, "precision": 2},

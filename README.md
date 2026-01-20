@@ -6,6 +6,7 @@
 - **저장은 복식부기 원장(Journal)**
 - 자동으로 **시산표 / 재무상태표(BS) / 손익계산서(IS) / 월별 현금흐름(Cashflow)** 생성
 - **자산대장(유/무형) + 평가(valuation) 이력** 관리
+- **정기 일정(구독) 관리 + 현금흐름 전망/자동 분개**
 
 > 철학: “가계부처럼 쉽게 입력하고, 회계처럼 보고한다.”
 
@@ -26,6 +27,11 @@
 - 이체: (차) to(자산) / (대) from(자산)
 
 카드 결제는 결제계정을 `카드미지급금`(LIABILITY)으로 선택하면 된다.
+
+### 정기 일정(구독) 관리
+- 월세/구독료 등 반복 거래를 등록
+- 만기일 기준 현금흐름 전망 생성
+- (옵션) 만기일에 자동 분개 생성
 
 ### 원장 / 시산표
 - 전표 헤더(journal_entries) 목록
@@ -91,18 +97,18 @@ home-finance-mvp/
     4_Ledger.py
     5_Reports.py
     6_Settings.py
+    7_Subscriptions.py
   core/
     db.py
     models.py
     services/
       ledger_service.py
+      subscription_service.py
       asset_service.py
     ui/
       formatting.py
-  migrations/
-    001_init_schema.sql
-    002_seed_accounts.sql
-    003_add_opening_balance_accounts.sql
+  alembic/
+    versions/
   data/
     app.db (자동 생성)
   requirements.txt
@@ -185,6 +191,16 @@ home-finance-mvp/
 - fees_native, currency, fx_rate
 - cash_account_id, income_account_id, fee_account_id
 - journal_entry_id (자동 분개 연결용)
+
+### subscriptions (정기 일정)
+- name
+- cadence / interval
+- next_due_date
+- amount
+- debit_account_id / credit_account_id
+- memo
+- auto_create_journal
+- last_run_date
 
 ---
 

@@ -24,8 +24,9 @@ def init_db():
 
 def run_migrations():
     """Run Alembic migrations programmatically."""
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     alembic_ini = BASE_DIR / "alembic.ini"
     if not alembic_ini.exists():

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import date
-from sqlmodel import Session, select, func
-from core.models import JournalEntry, JournalLine, Account, JournalEntryInput
+
+from sqlmodel import Session, func, select
+
+from core.models import Account, JournalEntry, JournalEntryInput, JournalLine
 
 
 def _validate_entry(lines: list[JournalLine]) -> None:
