@@ -415,5 +415,80 @@ def income_statement(session: Session, start: date, end: date):
 
 
 def monthly_cashflow(session: Session, year: int):
-    # Just return empty for now or impl logic if critical
-    return []
+    """Return monthly cashflow for cash-equivalent accounts."""
+    from sqlalchemy import text
+
+    cash_name_patterns = [
+        "%현금%",
+        "%보통예금%",
+        "%정기예금%",
+        "%cash%",
+        "%checking%",
+        "%savings%",
+    ]
+    name_clauses = " OR ".join(
+        f"LOWER(a.name) LIKE LOWER(:name_{idx})"
+        for idx in range(len(cash_name_patterns))
+    )
+    params = {f"name_{idx}": pattern for idx, pattern in enumerate(cash_name_patterns)}
+    params.update(
+        {
+            "start": f"{year}-01-01",
+            "end": f"{year}-12-31",
+        }
+    )
+
+    base_sql = f"""
+        WITH cash_accounts AS (
+            SELECT a.id
+            FROM accounts a
+            WHERE a.is_active = 1
+              AND ({name_clauses})
+        )
+    """
+
+    opening_sql = (
+        base_sql
+        + """
+        SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS opening_balance
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE jl.account_id IN (SELECT id FROM cash_accounts)
+          AND je.entry_date < :start
+        """
+    )
+
+    monthly_sql = (
+        base_sql
+        + """
+        SELECT strftime('%m', je.entry_date) AS month,
+               SUM(jl.debit - jl.credit) AS net_change
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE jl.account_id IN (SELECT id FROM cash_accounts)
+          AND je.entry_date >= :start
+          AND je.entry_date <= :end
+        GROUP BY strftime('%m', je.entry_date)
+        ORDER BY strftime('%m', je.entry_date)
+        """
+    )
+
+    opening_balance = float(
+        session.exec(text(opening_sql), params=params).one()[0] or 0.0
+    )
+    rows = session.exec(text(monthly_sql), params=params).fetchall()
+    monthly_map = {int(r[0]): float(r[1] or 0.0) for r in rows}
+
+    results = []
+    running_balance = opening_balance
+    for month in range(1, 13):
+        net_change = monthly_map.get(month, 0.0)
+        running_balance += net_change
+        results.append(
+            {
+                "month": month,
+                "net_change": net_change,
+                "ending_balance": running_balance,
+            }
+        )
+    return results
