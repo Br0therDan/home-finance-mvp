@@ -162,11 +162,29 @@ home-finance-mvp/
 - linked_account_id (회계 반영용 연결 계정)
 - acquisition_cost
 
-### valuations (평가 이력)
-- asset_id
-- valuation_date
-- value
-- method
+### asset_valuations (평가 이력)
+- asset_id, as_of_date
+- value_native, currency
+- method (market/appraisal/nav 등)
+- fx_rate (기준 통화 환산용 스냅샷)
+
+### investment_profiles (투자 자산 프로필)
+- asset_id (assets 연결, 1:1)
+- ticker, exchange, trading_currency
+- security_type, isin, broker
+
+### investment_lots (보유 로트)
+- asset_id, lot_date
+- quantity, remaining_quantity
+- unit_price_native, fees_native
+- currency, fx_rate
+
+### investment_events (투자 이벤트)
+- asset_id, event_type(BUY/SELL/DIVIDEND), event_date
+- quantity, price_per_unit_native, gross_amount_native
+- fees_native, currency, fx_rate
+- cash_account_id, income_account_id, fee_account_id
+- journal_entry_id (자동 분개 연결용)
 
 ---
 
@@ -191,6 +209,29 @@ home-finance-mvp/
 ### 월별 현금흐름 (Cashflow proxy)
 - 현금성 계정(예: `현금`, `보통예금`, `정기예금`, 영문 cash/checking/savings 포함)을 기준으로 집계
 - 월별 순변동(net change)과 기말 잔액(ending balance)을 표시
+
+---
+
+## 6.1) 투자 자산 평가 & 성과 지표
+
+### 평가 방법(Valuation Methods)
+- market: 시장가격 기반 평가
+- nav: 펀드 순자산가치(NAV)
+- appraisal: 수동 감정/평가
+
+### 성과 지표(Performance Metrics)
+- **Market Value**: 최신 valuation의 value_native
+- **Cost Basis**: investment_lots 기준(수량 × 단가 + 수수료)
+- **Unrealized P/L**: Market Value - Cost Basis
+
+> 투자 자산 UX는 **자산 중심(asset-first)** 흐름을 유지한다.
+> 사용자는 자산 화면에서 이벤트(매수/매도/배당)를 입력하고,
+> 시스템이 ledger 자동 분개를 생성한다.
+
+### 투자 이벤트 → 자동 분개 매핑(요약)
+- BUY: (차) 투자자산 / (차) 수수료비용 / (대) 현금·결제계정
+- SELL: (차) 현금·결제계정 / (대) 투자자산 / (대·차) 처분손익 / (차) 수수료비용
+- DIVIDEND: (차) 현금·결제계정 / (대) 배당수익
 
 ---
 
