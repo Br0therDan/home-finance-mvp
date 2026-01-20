@@ -4,8 +4,10 @@ This document is a **task contract** for GitHub Copilot (or any coding agent) to
 
 ## Instructions
 
-- When any changes are made to the code, update the README.md and AGENTS.md files to reflect the changes.
-
+- **When any changes are made to the code, and :**  
+  1. update the README.md and AGENTS.md files to reflect the changes.
+  2. verify the code works as expected by running pytest.
+  3. if you find any missing test cases, add them. and increase the coverage over 70%.
 
 ## Project Summary
 
