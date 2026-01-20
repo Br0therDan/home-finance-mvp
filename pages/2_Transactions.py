@@ -1,4 +1,5 @@
 import streamlit as st
+from datetime import date
 from core.db import Session
 from core.models import JournalEntryInput, JournalLine
 from core.services.fx_service import get_latest_rate
@@ -7,41 +8,44 @@ from core.services.settings_service import get_base_currency
 
 st.set_page_config(page_title="Transactions", page_icon="🧾", layout="wide")
 
-with Session() as session:
-    st.title("거래 입력")
-    st.caption("가계부 형태로 입력하면 내부적으로 복식부기 분개가 자동 생성된다.")
+st.title("거래 입력")
+st.caption("가계부 형태로 입력하면 내부적으로 복식부기 분개가 자동 생성된다.")
 
+with Session() as session:
     accounts = list_posting_accounts(session, active_only=True)
 
-    if len(accounts) == 0:
-        st.info(
-            "Posting 가능한 하위 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요."
-        )
-        st.stop()
+if len(accounts) == 0:
+    st.info(
+        "Posting 가능한 하위 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요."
+    )
+    st.stop()
 
-    def to_tuple(a):
-        return (
-            a["id"],
-            a["name"],
-            a["type"],
-            a["parent_id"],
-            a["is_active"],
-            a["is_system"],
-            a["level"],
-            a["allow_posting"],
-            a["currency"],
-        )
 
-    asset_accounts = [to_tuple(a) for a in accounts if a["type"] == "ASSET"]
-    liab_accounts = [to_tuple(a) for a in accounts if a["type"] == "LIABILITY"]
-    income_accounts = [to_tuple(a) for a in accounts if a["type"] == "INCOME"]
-    expense_accounts = [to_tuple(a) for a in accounts if a["type"] == "EXPENSE"]
+def to_tuple(a):
+    return (
+        a["id"],
+        a["name"],
+        a["type"],
+        a["parent_id"],
+        a["is_active"],
+        a["is_system"],
+        a["level"],
+        a["allow_posting"],
+        a["currency"],
+    )
 
-    TRANSACTION_TYPES = ["지출(Expense)", "수입(Income)", "이체(Transfer)"]
 
-    ttype = st.selectbox("거래 유형", TRANSACTION_TYPES)
-    txn_date = st.date_input("날짜", value=date.today())
+asset_accounts = [to_tuple(a) for a in accounts if a["type"] == "ASSET"]
+liab_accounts = [to_tuple(a) for a in accounts if a["type"] == "LIABILITY"]
+income_accounts = [to_tuple(a) for a in accounts if a["type"] == "INCOME"]
+expense_accounts = [to_tuple(a) for a in accounts if a["type"] == "EXPENSE"]
 
+TRANSACTION_TYPES = ["지출(Expense)", "수입(Income)", "이체(Transfer)"]
+
+ttype = st.selectbox("거래 유형", TRANSACTION_TYPES)
+txn_date = st.date_input("날짜", value=date.today())
+
+with Session() as session:
     base_cur = get_base_currency(session)
 
     # Account Selection (Reactive)
@@ -123,23 +127,24 @@ with Session() as session:
                     format=target_cfg["format"],
                 )
             with col2:
-                latest_rate = get_latest_rate(session, base_cur, target_currency)
-                rate_missing = latest_rate is None
-                if rate_missing:
-                    st.warning(
-                        f"{base_cur}/{target_currency} 환율이 없습니다. 설정에서 환율을 먼저 저장하세요."
-                    )
-                    latest_rate = 0.0
-                fx_rate = st.number_input(
-                    f"환율 ({base_cur}/{target_currency})",
-                    min_value=0.0,
-                    value=latest_rate,
-                    step=0.01,
+                with Session() as session:
+                    latest_rate = get_latest_rate(session, base_cur, target_currency)
+            rate_missing = latest_rate is None
+            if rate_missing:
+                st.warning(
+                    f"{base_cur}/{target_currency} 환율이 없습니다. 설정에서 환율을 먼저 저장하세요."
                 )
+                latest_rate = 0.0
+            fx_rate = st.number_input(
+                f"환율 ({base_cur}/{target_currency})",
+                min_value=0.0,
+                value=latest_rate,
+                step=0.01,
+            )
 
-            if native_amount > 0 and fx_rate > 0:
-                amount_base = round(native_amount * fx_rate, 0)
-                st.success(f"예정 장부 금액: {amount_base:,.0f} {base_cur}")
+        if native_amount > 0 and fx_rate > 0:
+            amount_base = round(native_amount * fx_rate, 0)
+            st.success(f"예정 장부 금액: {amount_base:,.0f} {base_cur}")
 
         memo = st.text_input("메모", value="")
         submitted = st.form_submit_button("거래 저장")
@@ -219,7 +224,8 @@ with Session() as session:
                     lines=lines,
                 )
                 try:
-                    eid = create_journal_entry(session, entry)
+                    with Session() as session:
+                        eid = create_journal_entry(session, entry)
                     st.success(f"저장 완료: 전표 #{eid}")
                     st.balloons()
                 except Exception as e:

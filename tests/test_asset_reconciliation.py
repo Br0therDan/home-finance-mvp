@@ -1,57 +1,43 @@
-from __future__ import annotations
-
 from datetime import date
-
-from sqlmodel import Session
-
-from core.models import Account, Asset, JournalEntryInput, JournalLine
+from core.models import JournalEntryInput, JournalLine
 from core.services.asset_service import reconcile_asset_valuations_with_ledger
 from core.services.fx_service import save_rate
 from core.services.ledger_service import create_journal_entry
-from core.services.valuation_service import ValuationService
+from core.services.valuation_service import upsert_asset_valuation
 
 
-def _create_posting_accounts(session: Session) -> dict[str, int]:
-    asset_account = Account(
-        id=1200,
-        name="투자자산",
-        type="ASSET",
-        parent_id=None,
-        is_active=True,
-        is_system=False,
-        level=2,
-        allow_posting=True,
-        currency="KRW",
+def _create_posting_accounts(conn) -> dict[str, int]:
+    conn.execute(
+        """INSERT INTO accounts (id, name, type, parent_id, is_active, is_system, level, allow_posting, currency)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (1200, "투자자산", "ASSET", None, 1, 0, 2, 1, "KRW"),
     )
-    equity_account = Account(
-        id=3100,
-        name="자본조정",
-        type="EQUITY",
-        parent_id=None,
-        is_active=True,
-        is_system=False,
-        level=2,
-        allow_posting=True,
-        currency="KRW",
+    conn.execute(
+        """INSERT INTO accounts (id, name, type, parent_id, is_active, is_system, level, allow_posting, currency)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (3100, "자본조정", "EQUITY", None, 1, 0, 2, 1, "KRW"),
     )
-    session.add_all([asset_account, equity_account])
-    session.commit()
-    return {"asset": asset_account.id, "equity": equity_account.id}
+    conn.commit()
+    return {"asset": 1200, "equity": 3100}
 
 
-def test_reconcile_asset_valuations_with_ledger(session: Session) -> None:
-    accounts = _create_posting_accounts(session)
+def test_reconcile_asset_valuations_with_ledger(conn) -> None:
+    accounts = _create_posting_accounts(conn)
 
-    asset = Asset(
-        name="테스트 자산",
-        asset_class="STOCK",
-        linked_account_id=accounts["asset"],
-        acquisition_date=date(2024, 1, 1),
-        acquisition_cost=1000.0,
+    conn.execute(
+        """INSERT INTO assets (name, asset_class, linked_account_id, acquisition_date, acquisition_cost, note)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            "테스트 자산",
+            "STOCK",
+            accounts["asset"],
+            date(2024, 1, 1).isoformat(),
+            1000.0,
+            "",
+        ),
     )
-    session.add(asset)
-    session.commit()
-    session.refresh(asset)
+    asset_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
 
     entry_input = JournalEntryInput(
         entry_date=date(2024, 1, 1),
@@ -62,19 +48,19 @@ def test_reconcile_asset_valuations_with_ledger(session: Session) -> None:
             JournalLine(account_id=accounts["equity"], debit=0.0, credit=1000.0),
         ],
     )
-    create_journal_entry(session, entry_input)
+    create_journal_entry(conn, entry_input)
 
-    save_rate(session, base="KRW", quote="USD", rate=1000.0)
-    val_service = ValuationService(session)
-    val_service.upsert_asset_valuation(
-        asset_id=asset.id,
+    save_rate(conn, base="KRW", quote="USD", rate=1000.0)
+    upsert_asset_valuation(
+        conn=conn,
+        asset_id=asset_id,
         as_of_date=date(2024, 1, 31),
         value_native=1.0,
         currency="USD",
     )
 
     reconciliation = reconcile_asset_valuations_with_ledger(
-        session, as_of=date(2024, 1, 31)
+        conn, as_of=date(2024, 1, 31)
     )
 
     assert reconciliation["base_currency"] == "KRW"
@@ -85,19 +71,23 @@ def test_reconcile_asset_valuations_with_ledger(session: Session) -> None:
     assert reconciliation["items"][0]["valued_asset_count"] == 1
 
 
-def test_reconcile_asset_valuations_missing_fx(session: Session) -> None:
-    accounts = _create_posting_accounts(session)
+def test_reconcile_asset_valuations_missing_fx(conn) -> None:
+    accounts = _create_posting_accounts(conn)
 
-    asset = Asset(
-        name="테스트 자산 2",
-        asset_class="STOCK",
-        linked_account_id=accounts["asset"],
-        acquisition_date=date(2024, 2, 1),
-        acquisition_cost=500.0,
+    conn.execute(
+        """INSERT INTO assets (name, asset_class, linked_account_id, acquisition_date, acquisition_cost, note)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (
+            "테스트 자산 2",
+            "STOCK",
+            accounts["asset"],
+            date(2024, 2, 1).isoformat(),
+            500.0,
+            "",
+        ),
     )
-    session.add(asset)
-    session.commit()
-    session.refresh(asset)
+    asset_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
 
     entry_input = JournalEntryInput(
         entry_date=date(2024, 2, 1),
@@ -108,18 +98,18 @@ def test_reconcile_asset_valuations_missing_fx(session: Session) -> None:
             JournalLine(account_id=accounts["equity"], debit=0.0, credit=500.0),
         ],
     )
-    create_journal_entry(session, entry_input)
+    create_journal_entry(conn, entry_input)
 
-    val_service = ValuationService(session)
-    val_service.upsert_asset_valuation(
-        asset_id=asset.id,
+    upsert_asset_valuation(
+        conn=conn,
+        asset_id=asset_id,
         as_of_date=date(2024, 2, 28),
         value_native=1.0,
         currency="USD",
     )
 
     reconciliation = reconcile_asset_valuations_with_ledger(
-        session, as_of=date(2024, 2, 28)
+        conn, as_of=date(2024, 2, 28)
     )
 
     assert reconciliation["total_book_value_base"] == 500.0

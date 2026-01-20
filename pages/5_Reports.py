@@ -1,12 +1,7 @@
-from __future__ import annotations
-
 from datetime import date
-
 import pandas as pd
 import streamlit as st
-from sqlmodel import Session
-
-from core.db import engine
+from core.db import Session
 from core.services.ledger_service import (
     balance_sheet,
     income_statement,
@@ -17,17 +12,19 @@ from ui.utils import format_currency, get_currency_config, get_pandas_style_fmt
 
 st.set_page_config(page_title="Reports", page_icon="📈", layout="wide")
 
-session = Session(engine)
-
 st.title("리포트")
 
 st.subheader("재무상태표(BS)")
 as_of = st.date_input("기준일", value=date.today())
 display_currency = st.session_state.get("display_currency", "KRW")
-bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
+
+with Session() as session:
+    bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
+
 if bs.get("missing_rates"):
     missing_pairs = ", ".join(f"{base}/{quote}" for base, quote in bs["missing_rates"])
     st.warning(f"환율이 없어 일부 값은 장부 기준으로 표시됩니다: {missing_pairs}")
+
 curr_cfg = get_currency_config(display_currency)
 fmt_disp = get_pandas_style_fmt(display_currency)
 
@@ -48,7 +45,6 @@ def _prep_bs_df(items):
 assets_df = _prep_bs_df(bs["assets"])
 liab_df = _prep_bs_df(bs["liabilities"])
 eq_df = _prep_bs_df(bs["equity"])
-
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -99,8 +95,9 @@ with col1:
 with col2:
     end = st.date_input("종료일", value=as_of, key="is_end")
 
-is_ = income_statement(session, start=start, end=end)
-base_currency = get_base_currency(session)
+with Session() as session:
+    is_ = income_statement(session, start=start, end=end)
+    base_currency = get_base_currency(session)
 base_cfg = get_currency_config(base_currency)
 fmt_base = get_pandas_style_fmt(base_currency)
 
@@ -136,7 +133,8 @@ st.divider()
 
 st.subheader("월별 현금 변화(Cashflow proxy)")
 year = st.number_input("연도", min_value=2000, max_value=2100, value=as_of.year, step=1)
-cf = monthly_cashflow(session, year=int(year))
+with Session() as session:
+    cf = monthly_cashflow(session, year=int(year))
 cf_df = pd.DataFrame(cf)
 
 if len(cf_df) == 0:

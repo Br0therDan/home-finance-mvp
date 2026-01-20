@@ -1,8 +1,7 @@
-from datetime import date
-
 import pandas as pd
 import streamlit as st
-from sqlmodel import Session
+from datetime import date
+from core.db import Session
 
 try:
     from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
@@ -14,7 +13,6 @@ except ImportError:
     DataReturnMode = None
     GridUpdateMode = None
 
-from core.db import engine
 from core.services.asset_service import (
     delete_asset,
     list_assets,
@@ -23,7 +21,12 @@ from core.services.asset_service import (
 from core.services.asset_transaction_service import dispose_asset, purchase_asset
 from core.services.ledger_service import account_balances, list_posting_accounts
 from core.services.settings_service import get_base_currency
-from core.services.valuation_service import ValuationService
+from core.services.valuation_service import (
+    get_valuation_history,
+    get_valuations_for_dashboard,
+    update_market_valuations,
+    upsert_asset_valuation,
+)
 from core.models import AssetType, DepreciationMethod
 from ui.utils import get_pandas_style_fmt
 
@@ -34,20 +37,28 @@ DISPOSE_ACTION = "💸 매각(처분)"
 
 st.set_page_config(page_title="Assets", page_icon="🏠", layout="wide")
 
-session = Session(engine)
+st.title("자산대장")
+st.caption("유/무형 자산을 등록하고 평가(valuation) 이력을 관리한다.")
 
-# ========== UI: Header & Purchase ==========
 
-# Pre-fetch accounts for dialogs and selection
-accounts = list_posting_accounts(session, active_only=True)
+def _get_page_data():
+    with Session() as session:
+        accounts = list_posting_accounts(session, active_only=True)
+        assets = list_assets(session)
+        ledger_balances = account_balances(session)
+        latest_vals = get_valuations_for_dashboard(session)
+        base_currency = get_base_currency(session)
+        return accounts, assets, ledger_balances, latest_vals, base_currency
+
+
+accounts, assets, ledger_balances, latest_vals, base_currency = _get_page_data()
+
+# Prepare derived data
 asset_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "ASSET"]
+liab_accounts = [(a["id"], a["name"]) for a in accounts if a["type"] == "LIABILITY"]
 
 if len(asset_accounts) == 0:
     st.info("자산 하위(Posting) 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요.")
-
-# ========== Logic: Reconciliation ==========
-assets = list_assets(session)
-ledger_balances = account_balances(session)
 
 # Group assets by linked_account_id
 asset_inventory_value = {}
@@ -67,11 +78,8 @@ for acid, name in asset_accounts:
     inventory_val = asset_inventory_value.get(lid, 0.0)
     ledger_val = float(ledger_balances.get(lid, 0.0))
 
-    # Ledger balance for Asset account is Debit - Credit.
-    # Usually Positive.
-
     diff = ledger_val - inventory_val
-    if abs(diff) > 1.0:  # Tolerance 1 KRW
+    if abs(diff) > 1.0:
         reconcile_items.append(
             {
                 "account": name,
@@ -84,17 +92,16 @@ for acid, name in asset_accounts:
         has_mismatch = True
 
 with st.container():
-    c1, c2 = st.columns([0.8, 0.2])
+    c1, c2 = st.columns([0.7, 0.3])
     with c1:
-        st.title("자산대장")
-        st.caption("유/무형 자산을 등록하고 평가(valuation) 이력을 관리한다.")
+        pass  # Title already set
     with c2:
         if st.button("➕ 자산 매입 (Purchase)", type="primary"):
             st.session_state["show_purchase_dialog"] = True
         if st.button("📈 시장가 업데이트 (Alpha Vantage)"):
             try:
-                val_service = ValuationService(session)
-                results = val_service.update_market_valuations()
+                with Session() as session:
+                    results = update_market_valuations(session)
                 st.success(f"{len(results)}개 자산의 시장가가 업데이트되었습니다.")
                 st.rerun()
             except Exception as e:
@@ -223,34 +230,34 @@ def _dialog_purchase_asset(asset_accounts: list, liab_accounts: list):
                 st.error("매입 금액은 0보다 커야 합니다.")
             else:
                 try:
-                    aid = purchase_asset(
-                        session,
-                        name=name.strip(),
-                        asset_class=asset_class,
-                        asset_sub_account_id=int(linked[0]),
-                        payment_account_id=int(pay_method[0]),
-                        acquisition_date=acq_date,
-                        acquisition_cost=acq_cost,
-                        note=note,
-                    )
-                    # Handle Evidence if any
-                    if evidence_file and aid:
-                        import os
-                        from core.models import Evidence
-
-                        ext = os.path.splitext(evidence_file.name)[1]
-                        file_name = f"asset_{aid}_{acq_date.isoformat()}{ext}"
-                        save_path = os.path.join("data/evidences", file_name)
-                        with open(save_path, "wb") as f:
-                            f.write(evidence_file.getbuffer())
-
-                        ev = Evidence(
-                            asset_id=aid,
-                            file_path=save_path,
-                            original_filename=evidence_file.name,
+                    with Session() as session:
+                        aid = purchase_asset(
+                            session,
+                            name=name.strip(),
+                            asset_class=asset_class,
+                            asset_sub_account_id=int(linked[0]),
+                            payment_account_id=int(pay_method[0]),
+                            acquisition_date=acq_date,
+                            acquisition_cost=acq_cost,
+                            note=note,
                         )
-                        session.add(ev)
-                        session.commit()
+                        # Handle Evidence if any
+                        if evidence_file and aid:
+                            import os
+
+                            ext = os.path.splitext(evidence_file.name)[1]
+                            file_name = f"asset_{aid}_{acq_date.isoformat()}{ext}"
+                            save_path = os.path.join("data/evidences", file_name)
+                            if not os.path.exists("data/evidences"):
+                                os.makedirs("data/evidences")
+                            with open(save_path, "wb") as f:
+                                f.write(evidence_file.getbuffer())
+
+                            session.execute(
+                                "INSERT INTO evidences (asset_id, file_path, original_filename) VALUES (?, ?, ?)",
+                                (aid, save_path, evidence_file.name),
+                            )
+                            session.commit()
 
                     st.success(f"매입 완료: 자산 #{aid} 등록 및 전표 생성됨.")
                     st.session_state["show_purchase_dialog"] = False
@@ -267,9 +274,7 @@ if st.session_state["show_purchase_dialog"]:
 st.divider()
 
 # assets and ledger_balances are already fetched above for reconciliation
-
-val_service = ValuationService(session)
-latest_vals = val_service.get_valuations_for_dashboard()
+# latest_vals already fetched
 
 rows = []
 for a in assets:
@@ -392,16 +397,17 @@ def _dialog_edit_asset(asset: dict, asset_accounts: list):
 
         if st.form_submit_button("저장"):
             try:
-                update_asset(
-                    session,
-                    asset_id=asset["id"],
-                    name=new_name,
-                    asset_class=new_class,
-                    linked_account_id=new_linked[0],
-                    acquisition_date=new_date,
-                    acquisition_cost=new_cost,
-                    note=new_note,
-                )
+                with Session() as session:
+                    update_asset(
+                        session,
+                        asset_id=asset["id"],
+                        name=new_name,
+                        asset_class=new_class,
+                        linked_account_id=new_linked[0],
+                        acquisition_date=new_date,
+                        acquisition_cost=new_cost,
+                        note=new_note,
+                    )
                 st.success("수정되었습니다.")
                 st.rerun()
             except Exception as e:
@@ -414,7 +420,8 @@ def _dialog_delete_asset(asset: dict):
     st.write(f"대상: **{asset['자산명']}**")
     if st.button("영구 삭제", type="primary"):
         try:
-            delete_asset(session, asset["id"])
+            with Session() as session:
+                delete_asset(session, asset["id"])
             st.success("삭제되었습니다.")
             st.rerun()
         except Exception as e:
@@ -486,17 +493,18 @@ def _dialog_dispose_asset(asset: dict, all_accounts: list):
 
         if st.form_submit_button("매각 확정"):
             try:
-                dispose_asset(
-                    session,
-                    asset_id=asset["id"],
-                    asset_name=asset["자산명"],
-                    linked_account_id=int(asset["연결계정ID"]),
-                    disposal_date=sale_date,
-                    sale_price=sale_price,
-                    deposit_account_id=int(deposit_acc["id"]),
-                    gain_loss_account_id=int(gl_acc["id"]),
-                    book_value=float(asset["취득가"]),
-                )
+                with Session() as session:
+                    dispose_asset(
+                        session,
+                        asset_id=asset["id"],
+                        asset_name=asset["자산명"],
+                        linked_account_id=int(asset["연결계정ID"]),
+                        disposal_date=sale_date,
+                        sale_price=sale_price,
+                        deposit_account_id=int(deposit_acc[0]),
+                        gain_loss_account_id=int(gl_acc[0]),
+                        book_value=float(asset["취득가"]),
+                    )
                 st.success("매각 처리가 완료되었습니다.")
                 st.rerun()
             except Exception as e:
@@ -508,7 +516,7 @@ def _handle_asset_action(df: pd.DataFrame, asset_accounts: list):
 
 
 st.subheader("자산 목록")
-base_currency = get_base_currency(session)
+# base_currency already fetched in _get_page_data
 
 df = pd.DataFrame(rows)
 
@@ -652,13 +660,15 @@ else:
 
         if st.form_submit_button("평가 저장"):
             try:
-                val_service.upsert_asset_valuation(
-                    asset_id=sel_asset_id,
-                    as_of_date=val_date.isoformat(),
-                    value_native=val_amount,
-                    currency=val_currency,
-                    note=val_note,
-                )
+                with Session() as session:
+                    upsert_asset_valuation(
+                        conn=session,
+                        asset_id=sel_asset_id,
+                        as_of_date=val_date.isoformat(),
+                        value_native=val_amount,
+                        currency=val_currency,
+                        note=val_note,
+                    )
                 st.success("평가값이 저장되었습니다.")
                 st.rerun()
             except Exception as e:
@@ -668,7 +678,8 @@ else:
     if sel_asset_id:
         st.markdown("---")
         st.markdown("**📊 평가 이력 (History)**")
-        history = val_service.get_valuation_history(sel_asset_id)
+        with Session() as session:
+            history = get_valuation_history(session, sel_asset_id)
         if history:
             hist_df = pd.DataFrame(
                 [

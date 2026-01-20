@@ -1,128 +1,31 @@
 from __future__ import annotations
 
-from sqlmodel import Session
-
-from core.models import Account
 from core.services.account_service import list_household_accounts
 
 
-def test_household_groups_hide_system_accounts(session: Session) -> None:
+def test_household_groups_hide_system_accounts(conn) -> None:
     accounts = [
-        Account(
-            id=1000,
-            name="현금",
-            type="ASSET",
-            parent_id=None,
-            is_active=True,
-            is_system=True,
-            level=1,
-            allow_posting=False,
-            currency="KRW",
-        ),
-        Account(
-            id=2000,
-            name="카드미지급금",
-            type="LIABILITY",
-            parent_id=None,
-            is_active=True,
-            is_system=True,
-            level=1,
-            allow_posting=False,
-            currency="KRW",
-        ),
-        Account(
-            id=3000,
-            name="자본/순자산",
-            type="EQUITY",
-            parent_id=None,
-            is_active=True,
-            is_system=True,
-            level=1,
-            allow_posting=False,
-            currency="KRW",
-        ),
-        Account(
-            id=4100,
-            name="근로/급여수익",
-            type="INCOME",
-            parent_id=None,
-            is_active=True,
-            is_system=True,
-            level=1,
-            allow_posting=False,
-            currency="KRW",
-        ),
-        Account(
-            id=5100,
-            name="식비",
-            type="EXPENSE",
-            parent_id=None,
-            is_active=True,
-            is_system=True,
-            level=1,
-            allow_posting=False,
-            currency="KRW",
-        ),
-        Account(
-            id=100001,
-            name="지갑현금",
-            type="ASSET",
-            parent_id=1000,
-            is_active=True,
-            is_system=False,
-            level=2,
-            allow_posting=True,
-            currency="KRW",
-        ),
-        Account(
-            id=200001,
-            name="삼성카드",
-            type="LIABILITY",
-            parent_id=2000,
-            is_active=True,
-            is_system=False,
-            level=2,
-            allow_posting=True,
-            currency="KRW",
-        ),
-        Account(
-            id=410001,
-            name="급여",
-            type="INCOME",
-            parent_id=4100,
-            is_active=True,
-            is_system=False,
-            level=2,
-            allow_posting=True,
-            currency="KRW",
-        ),
-        Account(
-            id=510001,
-            name="외식",
-            type="EXPENSE",
-            parent_id=5100,
-            is_active=True,
-            is_system=False,
-            level=2,
-            allow_posting=True,
-            currency="KRW",
-        ),
-        Account(
-            id=300101,
-            name="기초순자산(Opening Equity)",
-            type="EQUITY",
-            parent_id=3000,
-            is_active=True,
-            is_system=True,
-            level=2,
-            allow_posting=True,
-            currency="KRW",
-        ),
+        (1000, "현금", "ASSET", None, 1, 1, 1, 0, "KRW"),
+        (2000, "카드미지급금", "LIABILITY", None, 1, 1, 1, 0, "KRW"),
+        (3000, "자본/순자산", "EQUITY", None, 1, 1, 1, 0, "KRW"),
+        (4100, "근로/급여수익", "INCOME", None, 1, 1, 1, 0, "KRW"),
+        (5100, "식비", "EXPENSE", None, 1, 1, 1, 0, "KRW"),
+        (100001, "지갑현금", "ASSET", 1000, 1, 0, 2, 1, "KRW"),
+        (200001, "삼성카드", "LIABILITY", 2000, 1, 0, 2, 1, "KRW"),
+        (410001, "급여", "INCOME", 4100, 1, 0, 2, 1, "KRW"),
+        (510001, "외식", "EXPENSE", 5100, 1, 0, 2, 1, "KRW"),
+        (300101, "기초순자산(Opening Equity)", "EQUITY", 3000, 1, 1, 2, 1, "KRW"),
     ]
-    session.add_all(accounts)
-    session.commit()
 
-    household_accounts = list_household_accounts(session, active_only=True)
+    for acc in accounts:
+        conn.execute(
+            """INSERT INTO accounts (id, name, type, parent_id, is_active, is_system, level, allow_posting, currency)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            acc,
+        )
+    conn.commit()
+
+    household_accounts = list_household_accounts(conn, active_only=True)
     account_map = {account["name"]: account for account in household_accounts}
 
     assert "기초순자산(Opening Equity)" not in account_map

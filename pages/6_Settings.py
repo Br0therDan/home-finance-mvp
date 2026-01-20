@@ -1,7 +1,5 @@
 import streamlit as st
-from sqlmodel import Session
-
-from core.db import engine
+from core.db import Session
 from core.services.account_service import list_household_account_groups
 from core.services.fx_service import get_latest_rate, save_rate
 from core.services.settings_service import (
@@ -13,13 +11,12 @@ from core.services.settings_service import (
 
 st.set_page_config(page_title="Settings", page_icon="⚙️", layout="wide")
 
-session = Session(engine)
-
 st.title("설정")
 st.caption("시스템 전역 설정")
 
 # --- App Settings Section ---
-current_base = get_base_currency(session)
+with Session() as session:
+    current_base = get_base_currency(session)
 
 with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
     new_base = st.selectbox(
@@ -34,12 +31,14 @@ with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
     )
     if new_base != current_base:
         if st.button("기준 통화 업데이트"):
-            set_base_currency(session, new_base)
+            with Session() as session:
+                set_base_currency(session, new_base)
             st.success(f"기준 통화가 {new_base}로 변경되었습니다.")
             st.rerun()
 
     st.markdown("---")
-    current_key = get_av_api_key(session) or ""
+    with Session() as session:
+        current_key = get_av_api_key(session) or ""
     new_key = st.text_input(
         "Alpha Vantage API Key",
         value=current_key,
@@ -48,7 +47,8 @@ with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
     )
     if new_key != current_key:
         if st.button("API 키 저장"):
-            set_av_api_key(session, new_key)
+            with Session() as session:
+                set_av_api_key(session, new_key)
             st.success("API 키가 저장되었습니다.")
             st.rerun()
 
@@ -57,9 +57,10 @@ st.divider()
 # --- Household Account Groups Section ---
 with st.expander("🏠 계정 그룹 (Household View)", expanded=True):
     st.caption(
-        "시스템(L1) 계정은 숨기고, 실제 사용 계정을 생활 친화 그룹으로 묶어 보여줍니다."
+        "시스템(L1) 계정은 숨기고, 실제 사용 계전을 생활 친화 그룹으로 묶어 보여줍니다."
     )
-    grouped_accounts = list_household_account_groups(session, active_only=True)
+    with Session() as session:
+        grouped_accounts = list_household_account_groups(session, active_only=True)
     rows = []
     for group in grouped_accounts:
         for account in group["accounts"]:
@@ -75,7 +76,7 @@ with st.expander("🏠 계정 그룹 (Household View)", expanded=True):
     if rows:
         st.dataframe(rows, use_container_width=True, hide_index=True)
     else:
-        st.info("표시할 계정이 없습니다. 계정을 먼저 추가하세요.")
+        st.info("표시할 계정이 없습니다. 계정들을 먼저 추가하세요.")
 
 st.divider()
 
@@ -87,7 +88,8 @@ with st.expander("💱 수동 환율 관리 (Manual FX Rates)", expanded=True):
             "외화 (Quote Currency)", ["USD", "JPY", "EUR", "CNY"], key="fx_quote"
         )
     with col2:
-        current_rate = get_latest_rate(session, current_base, quote_cur)
+        with Session() as session:
+            current_rate = get_latest_rate(session, current_base, quote_cur)
         if current_rate is None:
             st.warning("등록된 환율이 없습니다. 값을 입력해 저장하세요.")
             current_rate = 0.0
@@ -101,6 +103,7 @@ with st.expander("💱 수동 환율 관리 (Manual FX Rates)", expanded=True):
         st.write(" ")
         st.write(" ")
         if st.button("환율 저장"):
-            save_rate(session, current_base, quote_cur, new_rate)
+            with Session() as session:
+                save_rate(session, current_base, quote_cur, new_rate)
             st.success("환율이 저장되었습니다.")
             st.rerun()

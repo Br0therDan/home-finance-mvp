@@ -6,8 +6,10 @@ from typing import Optional
 def get_settings(conn: sqlite3.Connection):
     row = conn.execute("SELECT * FROM app_settings ORDER BY id DESC LIMIT 1").fetchone()
     if not row:
-        # Create default
-        conn.execute("INSERT INTO app_settings (base_currency) VALUES ('KRW')")
+        # Create default with explicit timestamp to avoid IntegrityError if schema default is missing
+        conn.execute(
+            "INSERT INTO app_settings (base_currency, updated_at) VALUES ('KRW', CURRENT_TIMESTAMP)"
+        )
         row = conn.execute(
             "SELECT * FROM app_settings ORDER BY id DESC LIMIT 1"
         ).fetchone()

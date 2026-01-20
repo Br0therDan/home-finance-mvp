@@ -1,25 +1,20 @@
-from __future__ import annotations
-
 from datetime import date
-
 import pytest
-from sqlmodel import select
-
 from core.models import JournalEntryInput, JournalLine
 from core.services.account_service import create_user_account
 from core.services.ledger_service import create_journal_entry
 
 
-def test_multi_currency_journal_entry(session, basic_accounts):
+def test_multi_currency_journal_entry(conn, basic_accounts):
     l1_asset_id = basic_accounts["현금"]
     l1_equity_id = basic_accounts["자본"]
 
-    create_user_account(session, "신한KRW", "ASSET", l1_asset_id, currency="KRW")
+    create_user_account(conn, "신한KRW", "ASSET", l1_asset_id, currency="KRW")
     usd_acc_id = create_user_account(
-        session, "신한USD", "ASSET", l1_asset_id, currency="USD"
+        conn, "신한USD", "ASSET", l1_asset_id, currency="USD"
     )
     eq_acc_id = create_user_account(
-        session, "자본금", "EQUITY", l1_equity_id, currency="KRW"
+        conn, "자본금", "EQUITY", l1_equity_id, currency="KRW"
     )
 
     entry = JournalEntryInput(
@@ -45,25 +40,27 @@ def test_multi_currency_journal_entry(session, basic_accounts):
         ],
     )
 
-    entry_id = create_journal_entry(session, entry)
+    entry_id = create_journal_entry(conn, entry)
     assert entry_id > 0
 
-    lines = session.exec(
-        select(JournalLine).where(JournalLine.entry_id == entry_id)
-    ).all()
-    fx_lines = [line for line in lines if line.native_currency == "USD"]
+    lines_rows = conn.execute(
+        "SELECT native_currency, native_amount, fx_rate FROM journal_lines WHERE entry_id = ?",
+        (entry_id,),
+    ).fetchall()
+
+    fx_lines = [dict(line) for line in lines_rows if line["native_currency"] == "USD"]
     assert len(fx_lines) == 1
-    assert fx_lines[0].native_amount == 1000.0
-    assert fx_lines[0].fx_rate == 1330.0
+    assert fx_lines[0]["native_amount"] == 1000.0
+    assert fx_lines[0]["fx_rate"] == 1330.0
 
 
-def test_unbalanced_multi_currency_entry_fails(session, basic_accounts):
+def test_unbalanced_multi_currency_entry_fails(conn, basic_accounts):
     l1_asset_id = basic_accounts["현금"]
     usd_acc_id = create_user_account(
-        session, "TestUSD", "ASSET", l1_asset_id, currency="USD"
+        conn, "TestUSD", "ASSET", l1_asset_id, currency="USD"
     )
     krw_acc_id = create_user_account(
-        session, "TestKRW", "ASSET", l1_asset_id, currency="KRW"
+        conn, "TestKRW", "ASSET", l1_asset_id, currency="KRW"
     )
 
     entry = JournalEntryInput(
@@ -88,4 +85,4 @@ def test_unbalanced_multi_currency_entry_fails(session, basic_accounts):
     )
 
     with pytest.raises(ValueError, match="Unbalanced entry"):
-        create_journal_entry(session, entry)
+        create_journal_entry(conn, entry)

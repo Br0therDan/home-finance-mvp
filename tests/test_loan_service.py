@@ -1,26 +1,28 @@
 from datetime import date
-from sqlmodel import Session
-from core.models import Loan, RepaymentMethod
+from core.models import RepaymentMethod
 from core.services.loan_service import generate_loan_schedule, get_loan_summary
 
 
-def test_generate_loan_schedule_amortization(session: Session):
-    loan = Loan(
-        name="Test Amortization",
-        principal_amount=12000000,
-        interest_rate=0.036,  # 3.6%
-        term_months=12,
-        start_date=date(2024, 1, 1),
-        repayment_method=RepaymentMethod.AMORTIZATION,
-        liability_account_id=2100,  # Assuming a valid liability account ID from seed
+def test_generate_loan_schedule_amortization(conn):
+    conn.execute(
+        """INSERT INTO loans (name, principal_amount, interest_rate, term_months, start_date, repayment_method, liability_account_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "Test Amortization",
+            12000000,
+            0.036,
+            12,
+            date(2024, 1, 1).isoformat(),
+            RepaymentMethod.AMORTIZATION,
+            2100,
+        ),
     )
-    session.add(loan)
-    session.commit()
-    session.refresh(loan)
+    loan_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
 
-    generate_loan_schedule(session, loan.id)
+    generate_loan_schedule(conn, loan_id)
 
-    summary = get_loan_summary(session, loan.id)
+    summary = get_loan_summary(conn, loan_id)
     assert summary["total_interest"] > 0
     assert summary["remaining_principal"] == 12000000
 
@@ -29,22 +31,25 @@ def test_generate_loan_schedule_amortization(session: Session):
     assert summary["total_repayment"] > 12000000
 
 
-def test_generate_loan_schedule_bullet(session: Session):
-    loan = Loan(
-        name="Test Bullet",
-        principal_amount=10000000,
-        interest_rate=0.05,
-        term_months=12,
-        start_date=date(2024, 1, 1),
-        repayment_method=RepaymentMethod.BULLET,
-        liability_account_id=2100,
+def test_generate_loan_schedule_bullet(conn):
+    conn.execute(
+        """INSERT INTO loans (name, principal_amount, interest_rate, term_months, start_date, repayment_method, liability_account_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "Test Bullet",
+            10000000,
+            0.05,
+            12,
+            date(2024, 1, 1).isoformat(),
+            RepaymentMethod.BULLET,
+            2100,
+        ),
     )
-    session.add(loan)
-    session.commit()
-    session.refresh(loan)
+    loan_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    conn.commit()
 
-    generate_loan_schedule(session, loan.id)
+    generate_loan_schedule(conn, loan_id)
 
-    summary = get_loan_summary(session, loan.id)
+    summary = get_loan_summary(conn, loan_id)
     # 10M * 0.05 approx 500,000 total interest
     assert 499999 < summary["total_interest"] < 500001

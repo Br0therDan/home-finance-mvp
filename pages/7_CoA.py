@@ -1,13 +1,7 @@
-from __future__ import annotations
-
 import io
-
 import pandas as pd
 import streamlit as st
-from sqlmodel import Session, func, select
-
-from core.db import engine
-from core.models import Account
+from core.db import Session
 from core.services.account_service import (
     create_user_account,
     delete_user_account,
@@ -15,8 +9,6 @@ from core.services.account_service import (
 )
 
 st.set_page_config(page_title="Accounts", page_icon="🗂️", layout="wide")
-
-session = Session(engine)
 
 st.title("계정과목 관리 (CoA)")
 st.caption("시스템(Level 1) 및 사용자 정의 계정을 관리합니다.")
@@ -30,7 +22,8 @@ def _load_accounts_df() -> pd.DataFrame:
         LEFT JOIN accounts p ON p.id = a.parent_id
         ORDER BY a.type, a.level, a.name
     """
-    return pd.read_sql(sql, session.connection())
+    with Session() as session:
+        return pd.read_sql(sql, session)
 
 
 def _format_section(section: pd.DataFrame) -> pd.DataFrame:
@@ -154,14 +147,15 @@ def _dialog_create_child(type_: str, parent_id: int) -> None:
             st.error("계정명을 입력해 주세요.")
             return
         try:
-            create_user_account(
-                session,
-                name=name,
-                type_=type_,
-                parent_id=int(parent_id),
-                is_active=bool(is_active),
-                currency=currency,
-            )
+            with Session() as session:
+                create_user_account(
+                    session,
+                    name=name,
+                    type_=type_,
+                    parent_id=int(parent_id),
+                    is_active=bool(is_active),
+                    currency=currency,
+                )
             st.toast("계정이 생성되었습니다.")
             st.rerun()
         except Exception as e:  # noqa: BLE001
@@ -196,13 +190,14 @@ def _dialog_edit(
 
     if submitted:
         try:
-            update_user_account(
-                session,
-                int(account_id),
-                name=name,
-                is_active=bool(is_active),
-                currency=currency,
-            )
+            with Session() as session:
+                update_user_account(
+                    session,
+                    int(account_id),
+                    name=name,
+                    is_active=bool(is_active),
+                    currency=currency,
+                )
             st.toast("수정되었습니다.")
             st.rerun()
         except Exception as e:  # noqa: BLE001
@@ -221,7 +216,8 @@ def _dialog_delete(account_id: int, account_name: str) -> None:
     with col1:
         if st.button("삭제", type="primary"):
             try:
-                delete_user_account(session, int(account_id))
+                with Session() as session:
+                    delete_user_account(session, int(account_id))
                 st.toast("삭제되었습니다.")
                 st.rerun()
             except Exception as e:  # noqa: BLE001
@@ -345,125 +341,110 @@ def _process_excel_impot(file):
         count_created = 0
         count_updated = 0
 
-        for _, row in df.iterrows():
-            row_id = safe_int(row.get("id"))
-            name = str(row["name"]).strip()
-            type_ = str(row["type"]).strip()
-            parent_id = safe_int(row.get("parent_id"))
+        with Session() as session:
+            for _, row in df.iterrows():
+                row_id = safe_int(row.get("id"))
+                name = str(row["name"]).strip()
+                type_ = str(row["type"]).strip()
+                parent_id = safe_int(row.get("parent_id"))
 
-            # 1. Try to find existing account
-            existing = None
-            if row_id:
-                existing = session.get(Account, row_id)
+                # 1. Try to find existing account
+                existing = None
+                if row_id:
+                    existing = session.execute(
+                        "SELECT * FROM accounts WHERE id = ?", (row_id,)
+                    ).fetchone()
 
-            # If valid ID provided and exists -> Update
-            if existing:
-                existing.name = name
-                existing.type = type_
-                if parent_id:
-                    existing.parent_id = parent_id
+                # If valid ID provided and exists -> Update
+                if existing:
+                    update_sql = "UPDATE accounts SET name = ?, type = ?"
+                    params = [name, type_]
+                    if parent_id:
+                        update_sql += ", parent_id = ?"
+                        params.append(parent_id)
 
-                # Optional fields
-                if "is_active" in row and not pd.isna(row["is_active"]):
-                    existing.is_active = bool(int(row["is_active"]))
-                if "currency" in row and not pd.isna(row["currency"]):
-                    existing.currency = str(row["currency"]).upper()
+                    # Optional fields
+                    if "is_active" in row and not pd.isna(row["is_active"]):
+                        update_sql += ", is_active = ?"
+                        params.append(1 if bool(int(row["is_active"])) else 0)
+                    if "currency" in row and not pd.isna(row["currency"]):
+                        update_sql += ", currency = ?"
+                        params.append(str(row["currency"]).upper())
 
-                session.add(existing)
-                count_updated += 1
+                    update_sql += " WHERE id = ?"
+                    params.append(row_id)
+                    session.execute(update_sql, tuple(params))
+                    count_updated += 1
 
-            # If no ID or ID not found -> Create
-            else:
-                # Creation requires parent_id for L2+
-                # Exception: L1 account creation via Excel? Allowed if parent_id is missing/None
+                # If no ID or ID not found -> Create
+                else:
+                    if not row_id:
+                        if not parent_id:
+                            st.error(
+                                f"[Skip] {name}: ID가 없는 L1 계정 생성은 현재 지원하지 않습니다. ID를 지정해주세요."
+                            )
+                            continue
 
-                # If ID is missing, we must generate one.
-                # Logic copied/adapted from create_user_account for auto-ID
-                if not row_id:
-                    if not parent_id:
-                        # L1 New Account
-                        # Must find max L1 ID for this type? Or just simple increment?
-                        # For MVP, simpler to restrict auto-creation to L2 (requires parent) or require ID for L1.
-                        st.error(
-                            f"[Skip] {name}: ID가 없는 L1 계정 생성은 현재 지원하지 않습니다. ID를 지정해주세요."
-                        )
-                        continue
+                        # Calculate new ID
+                        range_min = parent_id * 100 + 1
+                        range_max = parent_id * 100 + 99
 
-                    parent = session.get(Account, parent_id)
-                    if not parent:
-                        st.error(
-                            f"[Skip] {name}: 상위 계정 ID({parent_id})를 찾을 수 없습니다."
-                        )
-                        continue
+                        # Determine next ID
+                        max_row = session.execute(
+                            "SELECT MAX(id) FROM accounts WHERE id >= ? AND id <= ?",
+                            (range_min, range_max),
+                        ).fetchone()
+                        max_id_db = max_row[0] if max_row and max_row[0] else None
 
-                    # Calculate new ID
-                    parent_id_int = parent.id
-                    range_min = parent_id_int * 100 + 1
-                    range_max = parent_id_int * 100 + 99
+                        new_id = max_id_db + 1 if max_id_db else range_min
 
-                    # Determine next ID
-                    # Check DB for max in range
-                    statement = select(func.max(Account.id)).where(
-                        Account.id >= range_min, Account.id <= range_max
+                        if new_id > range_max:
+                            st.error(f"[Skip] {name}: 하위 계정 한도 초과")
+                            continue
+
+                        row_id = new_id
+
+                    # Optional fields defaults
+                    is_active_val = 1
+                    if "is_active" in row and not pd.isna(row["is_active"]):
+                        is_active_val = 1 if bool(int(row["is_active"])) else 0
+
+                    currency_val = "KRW"
+                    if "currency" in row and not pd.isna(row["currency"]):
+                        currency_val = str(row["currency"]).upper()
+
+                    # Create New
+                    level_val = 1 if not parent_id else 2
+                    session.execute(
+                        """INSERT INTO accounts (id, name, type, parent_id, is_active, is_system, level, allow_posting, currency)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            row_id,
+                            name,
+                            type_,
+                            parent_id,
+                            is_active_val,
+                            0,
+                            level_val,
+                            1,
+                            currency_val,
+                        ),
                     )
-                    max_id_db = session.exec(statement).one()
 
-                    new_id = max_id_db + 1 if max_id_db else range_min
+                    # Auto-manage parent posting logic
+                    if parent_id:
+                        session.execute(
+                            "UPDATE accounts SET allow_posting = 0 WHERE id = ? AND allow_posting = 1",
+                            (parent_id,),
+                        )
 
-                    # ALSO Check current session NEW objects to prevent collision in bulk insert
-                    # (Simple approach: commit per row or scan new_objects. For now, we commit at end, so we might have collision if we don't increment local tracker.
-                    # BUT session.exec won't see uncommitted adds unless we flush? or maybe it does?
-                    # Safer: flush per create or just query well.
-                    # Let's simple-track? Or just flush.)
-                    session.flush()  # Flush to make the newly added account visible to next select logic if needed. However, commit is final.
-                    # Actually, if we use session.exec below again for the next row, we need the previous one to be 'visible' to the transaction.
-                    # Flushing makes it visible to the transaction.
+                    count_created += 1
 
-                    # Re-check to be safe after other potential inserts?
-                    # The logic above queries DB. Flush sends invalidator.
-
-                    if new_id > range_max:
-                        st.error(f"[Skip] {name}: 하위 계정 한도 초과")
-                        continue
-
-                    row_id = new_id
-
-                # Create New
-                new_acc = Account(
-                    id=row_id,
-                    name=name,
-                    type=type_,
-                    parent_id=parent_id,
-                    is_active=True,
-                    is_system=False,
-                    level=1 if not parent_id else 2,  # simplified level logic
-                    allow_posting=True,
-                    currency="KRW",
-                )
-
-                # Update specific fields if present
-                if "is_active" in row and not pd.isna(row["is_active"]):
-                    new_acc.is_active = bool(int(row["is_active"]))
-                if "currency" in row and not pd.isna(row["currency"]):
-                    new_acc.currency = str(row["currency"]).upper()
-
-                # Auto-manage parent posting logic
-                if parent_id:
-                    parent_acc = session.get(Account, parent_id)
-                    if parent_acc and parent_acc.allow_posting:
-                        parent_acc.allow_posting = False
-                        session.add(parent_acc)
-
-                session.add(new_acc)
-                session.flush()  # Ensure ID is taken
-                count_created += 1
-
-        session.commit()
-        st.success(f"완료: 생성 {count_created}건, 업데이트 {count_updated}건")
-        st.rerun()
+            session.commit()
+            st.success(f"완료: 생성 {count_created}건, 업데이트 {count_updated}건")
+            st.rerun()
 
     except Exception as e:
-        session.rollback()
         st.error(f"Excel 처리 실패: {e}")
 
 

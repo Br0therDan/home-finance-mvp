@@ -1,12 +1,7 @@
-from __future__ import annotations
-
 from datetime import date, timedelta
-
 import pandas as pd
 import streamlit as st
-from sqlmodel import Session
-
-from core.db import engine
+from core.db import Session
 from core.services.ledger_service import list_posting_accounts
 from core.services.settings_service import get_base_currency
 from core.services.subscription_service import (
@@ -18,12 +13,12 @@ from core.services.subscription_service import (
 
 st.set_page_config(page_title="Subscriptions", page_icon="🔁", layout="wide")
 
-session = Session(engine)
-
 st.title("정기 일정(구독) 관리")
 st.caption("반복되는 지출/수입 일정을 등록하고 현금흐름을 미리 확인합니다.")
 
-accounts = list_posting_accounts(session, active_only=True)
+with Session() as session:
+    accounts = list_posting_accounts(session, active_only=True)
+
 if len(accounts) == 0:
     st.info(
         "Posting 가능한 하위 계정이 없습니다. 설정에서 하위 계정을 먼저 생성하세요."
@@ -48,7 +43,8 @@ def to_tuple(account: dict) -> tuple:
 account_tuples = [to_tuple(a) for a in accounts]
 account_lookup = {int(a[0]): a[1] for a in account_tuples}
 
-base_cur = get_base_currency(session)
+with Session() as session:
+    base_cur = get_base_currency(session)
 
 st.subheader("정기 일정 등록")
 with st.form("subscription_form", clear_on_submit=True):
@@ -84,19 +80,20 @@ with st.form("subscription_form", clear_on_submit=True):
 
     if submitted:
         try:
-            subscription_id = create_subscription(
-                session,
-                name=name,
-                cadence=cadence,
-                interval=int(interval),
-                next_due_date=next_due_date,
-                amount=amount,
-                debit_account_id=int(debit_account[0]),
-                credit_account_id=int(credit_account[0]),
-                memo=memo,
-                is_active=is_active,
-                auto_create_journal=auto_create,
-            )
+            with Session() as session:
+                subscription_id = create_subscription(
+                    session,
+                    name=name,
+                    cadence=cadence,
+                    interval=int(interval),
+                    next_due_date=next_due_date,
+                    amount=amount,
+                    debit_account_id=int(debit_account[0]),
+                    credit_account_id=int(credit_account[0]),
+                    memo=memo,
+                    is_active=is_active,
+                    auto_create_journal=auto_create,
+                )
             st.success(f"저장 완료: 구독 #{subscription_id}")
         except Exception as exc:
             st.error(str(exc))
@@ -104,7 +101,8 @@ with st.form("subscription_form", clear_on_submit=True):
 st.divider()
 
 st.subheader("정기 일정 목록")
-subscriptions = list_subscriptions(session, active_only=False)
+with Session() as session:
+    subscriptions = list_subscriptions(session, active_only=False)
 if subscriptions:
     table_rows = []
     for sub in subscriptions:
@@ -141,9 +139,10 @@ with col2:
 if projection_end < projection_start:
     st.warning("종료일은 시작일 이후여야 합니다.")
 else:
-    projections = generate_cashflow_projection(
-        session, projection_start, projection_end, active_only=True
-    )
+    with Session() as session:
+        projections = generate_cashflow_projection(
+            session, projection_start, projection_end, active_only=True
+        )
     if projections:
         projection_rows = [
             {
@@ -164,7 +163,8 @@ st.divider()
 st.subheader("만기 처리")
 as_of = st.date_input("처리 기준일", value=date.today(), key="process_as_of")
 if st.button("만기 일정 처리 및 자동 분개", type="primary"):
-    results = process_due_subscriptions(session, as_of=as_of, create_entries=True)
+    with Session() as session:
+        results = process_due_subscriptions(session, as_of=as_of, create_entries=True)
     if results:
         st.success(f"{len(results)}건 처리되었습니다.")
         st.dataframe(pd.DataFrame(results), use_container_width=True)
