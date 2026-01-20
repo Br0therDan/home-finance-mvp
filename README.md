@@ -178,6 +178,11 @@ home-finance-mvp/
 - method (market/appraisal/nav 등)
 - fx_rate (기준 통화 환산용 스냅샷)
 
+### 자산 평가 ↔ 원장 매핑 규칙
+- 각 자산(`assets`)은 `linked_account_id`로 **단일 자산 계정**에 매핑된다.
+- `asset_valuations`는 **정보용 스냅샷**이며, **자동 분개를 생성하지 않는다**.
+- 대시보드에서 **평가 합계로 순자산을 계산**하고, **장부 자산 계정과의 대사 결과**를 표시한다.
+
 ### investment_profiles (투자 자산 프로필)
 - asset_id (assets 연결, 1:1)
 - ticker, exchange, trading_currency
