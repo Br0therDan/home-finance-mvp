@@ -4,6 +4,105 @@ from sqlmodel import Session, func, select
 
 from core.models import Account, Asset, JournalLine
 
+HOUSEHOLD_GROUP_LABELS = {
+    "Cash": "현금 (Cash)",
+    "Bank": "은행 (Bank)",
+    "Credit Card": "신용카드 (Credit Card)",
+    "Investment": "투자 (Investment)",
+    "Home": "주거/주택 (Home)",
+    "Vehicle": "차량 (Vehicle)",
+    "Household Expenses": "생활비 (Household Expenses)",
+    "Income": "수입 (Income)",
+    "Other": "기타 (Other)",
+}
+
+HOUSEHOLD_L1_GROUP_MAP = {
+    "현금": "Cash",
+    "보통예금": "Bank",
+    "정기예금": "Bank",
+    "증권/투자자산": "Investment",
+    "부동산": "Home",
+    "전세보증금(임차)": "Home",
+    "차량/운송수단": "Vehicle",
+    "카드미지급금": "Credit Card",
+    "주택담보대출": "Home",
+    "전세보증금(임대)": "Home",
+}
+
+
+def _resolve_l1_account_name(
+    account: Account, account_lookup: dict[int, Account]
+) -> str | None:
+    current = account
+    while current.parent_id:
+        parent = account_lookup.get(int(current.parent_id))
+        if parent is None:
+            break
+        current = parent
+    return current.name if current else None
+
+
+def _household_group_for(account_type: str, l1_name: str | None) -> str:
+    if account_type == "INCOME":
+        return "Income"
+    if account_type == "EXPENSE":
+        return "Household Expenses"
+    if l1_name and l1_name in HOUSEHOLD_L1_GROUP_MAP:
+        return HOUSEHOLD_L1_GROUP_MAP[l1_name]
+    return "Other"
+
+
+def list_household_accounts(
+    session: Session,
+    active_only: bool = True,
+    include_system: bool = False,
+) -> list[dict]:
+    account_lookup = {
+        account.id: account for account in session.exec(select(Account)).all()
+    }
+    statement = select(Account).where(Account.allow_posting)
+    if active_only:
+        statement = statement.where(Account.is_active)
+    if not include_system:
+        statement = statement.where(Account.is_system == 0)
+    statement = statement.order_by(Account.type, Account.name)
+    accounts = session.exec(statement).all()
+
+    results = []
+    for account in accounts:
+        l1_name = _resolve_l1_account_name(account, account_lookup)
+        group_key = _household_group_for(account.type, l1_name)
+        results.append(
+            {
+                **account.model_dump(),
+                "l1_name": l1_name,
+                "household_group": group_key,
+                "household_group_label": HOUSEHOLD_GROUP_LABELS[group_key],
+            }
+        )
+    return results
+
+
+def list_household_account_groups(
+    session: Session,
+    active_only: bool = True,
+    include_system: bool = False,
+) -> list[dict]:
+    accounts = list_household_accounts(
+        session, active_only=active_only, include_system=include_system
+    )
+    grouped: dict[str, list[dict]] = {key: [] for key in HOUSEHOLD_GROUP_LABELS}
+    for account in accounts:
+        grouped[account["household_group"]].append(account)
+    return [
+        {
+            "group": group_key,
+            "label": HOUSEHOLD_GROUP_LABELS[group_key],
+            "accounts": grouped[group_key],
+        }
+        for group_key in HOUSEHOLD_GROUP_LABELS
+    ]
+
 
 def list_system_accounts_by_type(session: Session, type_: str) -> list[dict]:
     statement = (
