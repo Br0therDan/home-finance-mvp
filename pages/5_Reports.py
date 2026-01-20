@@ -12,7 +12,7 @@ from core.services.ledger_service import (
     income_statement,
     monthly_cashflow,
 )
-from core.ui.formatting import fmt, krw
+from ui.utils import format_currency, get_currency_config, get_pandas_style_fmt
 
 st.set_page_config(page_title="Reports", page_icon="📈", layout="wide")
 
@@ -24,6 +24,8 @@ st.subheader("재무상태표(BS)")
 as_of = st.date_input("기준일", value=date.today())
 display_currency = st.session_state.get("display_currency", "KRW")
 bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
+curr_cfg = get_currency_config(display_currency)
+fmt_disp = get_pandas_style_fmt(display_currency)
 
 
 def _prep_bs_df(items):
@@ -41,44 +43,48 @@ def _prep_bs_df(items):
 
 assets_df = _prep_bs_df(bs["assets"])
 liab_df = _prep_bs_df(bs["liabilities"])
-eq_df = _prep_bs_df(bs["equity"])
+eq_df = _prep_df(bs["equity"]) if "_prep_df" in globals() else _prep_bs_df(bs["equity"])
+# My previous code used _prep_bs_df.
+
 
 col1, col2, col3 = st.columns(3)
 with col1:
     st.metric(
-        f"총 자산 ({display_currency})", fmt(bs["total_assets_disp"], display_currency)
+        f"총 자산 ({display_currency})",
+        format_currency(bs["total_assets_disp"], display_currency),
     )
 with col2:
     st.metric(
         f"총 부채 ({display_currency})",
-        fmt(bs["total_liabilities_disp"], display_currency),
+        format_currency(bs["total_liabilities_disp"], display_currency),
     )
 with col3:
     st.metric(
-        f"순자산 ({display_currency})", fmt(bs["net_worth_disp"], display_currency)
+        f"순자산 ({display_currency})",
+        format_currency(bs["net_worth_disp"], display_currency),
     )
 
 c1, c2, c3 = st.columns(3)
 with c1:
     st.dataframe(
-        assets_df,
+        assets_df.style.format({"평가가치(표시)": fmt_disp}),
         width="stretch",
         hide_index=True,
-        column_config={"평가가치(표시)": st.column_config.NumberColumn(format="%.0f")},
+        column_config={"평가가치(표시)": st.column_config.NumberColumn()},
     )
 with c2:
     st.dataframe(
-        liab_df,
+        liab_df.style.format({"평가가치(표시)": fmt_disp}),
         width="stretch",
         hide_index=True,
-        column_config={"평가가치(표시)": st.column_config.NumberColumn(format="%.0f")},
+        column_config={"평가가치(표시)": st.column_config.NumberColumn()},
     )
 with c3:
     st.dataframe(
-        eq_df,
+        eq_df.style.format({"평가가치(표시)": fmt_disp}),
         width="stretch",
         hide_index=True,
-        column_config={"평가가치(표시)": st.column_config.NumberColumn(format="%.0f")},
+        column_config={"평가가치(표시)": st.column_config.NumberColumn()},
     )
 
 st.divider()
@@ -91,11 +97,14 @@ with col2:
     end = st.date_input("종료일", value=as_of, key="is_end")
 
 is_ = income_statement(session, start=start, end=end)
+# IS usually reports in Base Currency (KRW)
+base_currency = "KRW"
+base_cfg = get_currency_config(base_currency)
 
 col1, col2, col3 = st.columns(3)
-col1.metric("총 수익", krw(is_["total_income"]))
-col2.metric("총 비용", krw(is_["total_expense"]))
-col3.metric("순이익", krw(is_["net_profit"]))
+col1.metric("총 수익", format_currency(is_["total_income"], base_currency))
+col2.metric("총 비용", format_currency(is_["total_expense"], base_currency))
+col3.metric("순이익", format_currency(is_["net_profit"], base_currency))
 
 income_df = pd.DataFrame(is_["income"], columns=["수익", "금액"])
 expense_df = pd.DataFrame(is_["expense"], columns=["비용", "금액"])
@@ -106,14 +115,18 @@ with c1:
         income_df,
         width="stretch",
         hide_index=True,
-        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+        column_config={
+            "금액": st.column_config.NumberColumn(format=base_cfg["format"])
+        },
     )
 with c2:
     st.dataframe(
         expense_df,
         width="stretch",
         hide_index=True,
-        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+        column_config={
+            "금액": st.column_config.NumberColumn(format=base_cfg["format"])
+        },
     )
 
 st.divider()
@@ -127,12 +140,12 @@ if len(cf_df) == 0:
     st.info("현금/예금 계정이 없거나 거래가 없다.")
 else:
     st.dataframe(
-        cf_df,
+        cf_df.style.format({"net_change": fmt_base, "ending_balance": fmt_base}),
         width="stretch",
         hide_index=True,
         column_config={
             "month": "월",
-            "net_change": st.column_config.NumberColumn("순유입", format="%.0f"),
-            "ending_balance": st.column_config.NumberColumn("기말잔액", format="%.0f"),
+            "net_change": st.column_config.NumberColumn("순유입"),
+            "ending_balance": st.column_config.NumberColumn("기말잔액"),
         },
     )

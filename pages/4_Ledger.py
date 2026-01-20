@@ -71,13 +71,20 @@ display_lines = lines.rename(
         "memo": "메모",
     }
 )
+from core.services.settings_service import get_base_currency
+from ui.utils import get_currency_config, get_pandas_style_fmt
+
+base_cur = get_base_currency(session)
+base_cfg = get_currency_config(base_cur)
+fmt_base = get_pandas_style_fmt(base_cur)
+
 st.dataframe(
-    display_lines,
+    display_lines.style.format({"차변": fmt_base, "대변": fmt_base}),
     width="stretch",
     hide_index=True,
     column_config={
-        "차변": st.column_config.NumberColumn(format="%.0f"),
-        "대변": st.column_config.NumberColumn(format="%.0f"),
+        "차변": st.column_config.NumberColumn(),
+        "대변": st.column_config.NumberColumn(),
     },
 )
 
@@ -99,12 +106,14 @@ if not tb_df.empty:
         columns={"account": "계정", "type": "유형", "debit": "차변", "credit": "대변"}
     )
     st.dataframe(
-        tb_display[["계정", "유형", "차변", "대변"]],
+        tb_display[["계정", "유형", "차변", "대변"]].style.format(
+            {"차변": fmt_base, "대변": fmt_base}
+        ),
         width="stretch",
         hide_index=True,
         column_config={
-            "차변": st.column_config.NumberColumn(format="%.0f"),
-            "대변": st.column_config.NumberColumn(format="%.0f"),
+            "차변": st.column_config.NumberColumn(),
+            "대변": st.column_config.NumberColumn(),
         },
     )
 else:

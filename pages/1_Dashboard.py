@@ -11,7 +11,7 @@ from core.services.asset_service import list_assets
 from core.services.fx_service import get_latest_rate
 from core.services.ledger_service import balance_sheet, income_statement
 from core.services.valuation_service import ValuationService
-from core.ui.formatting import fmt, krw
+from ui.utils import format_currency, get_currency_config, get_pandas_style_fmt
 
 st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
 
@@ -21,6 +21,7 @@ st.title("대시보드")
 
 as_of = st.date_input("기준일", value=date.today())
 display_currency = st.session_state.get("display_currency", "KRW")
+curr_cfg = get_currency_config(display_currency)
 
 bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
 
@@ -65,29 +66,36 @@ unrealized_pnl_base = valuation_base_total - total_book_value_base
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(
     f"총 자산 (장부, {display_currency})",
-    fmt(bs["total_assets_disp"], display_currency),
+    format_currency(bs["total_assets_disp"], display_currency),
 )
 col2.metric(
     f"총 자산 (평가, {display_currency})",
-    fmt(valuation_disp_total, display_currency),
-    delta=fmt(valuation_disp_total - bs["total_assets_disp"], display_currency),
+    format_currency(valuation_disp_total, display_currency),
+    delta=format_currency(
+        valuation_disp_total - bs["total_assets_disp"], display_currency
+    ),
 )
 col3.metric(
-    f"총 부채 ({display_currency})", fmt(bs["total_liabilities_disp"], display_currency)
+    f"총 부채 ({display_currency})",
+    format_currency(bs["total_liabilities_disp"], display_currency),
 )
 col4.metric(
     f"순자산 (평가, {display_currency})",
-    fmt(valuation_disp_total - bs["total_liabilities_disp"], display_currency),
+    format_currency(
+        valuation_disp_total - bs["total_liabilities_disp"], display_currency
+    ),
 )
 
 with st.expander("🔍 장부 vs 평가 상세 (KRW 기준)", expanded=False):
+    # Base currency hardcoded to KRW mostly, or check bs['base_currency']
+    base_cur = bs.get("base_currency", "KRW")
     c1, c2, c3 = st.columns(3)
-    c1.metric("총 자산 (Book Value)", krw(total_book_value_base))
-    c2.metric("총 자산 (Valuation)", krw(valuation_base_total))
+    c1.metric("총 자산 (Book Value)", format_currency(total_book_value_base, base_cur))
+    c2.metric("총 자산 (Valuation)", format_currency(valuation_base_total, base_cur))
     c3.metric(
         "미실현 손익 (Unrealized PnL)",
-        krw(unrealized_pnl_base),
-        delta=krw(unrealized_pnl_base),
+        format_currency(unrealized_pnl_base, base_cur),
+        delta=format_currency(unrealized_pnl_base, base_cur),
     )
 
 st.divider()
@@ -114,41 +122,60 @@ assets_df = _prep_df(bs["assets"])
 liab_df = _prep_df(bs["liabilities"])
 eq_df = _prep_df(bs["equity"])
 
+# Style format strings
+base_cur = bs.get("base_currency", "KRW")
+fmt_disp = get_pandas_style_fmt(display_currency)
+fmt_base = get_pandas_style_fmt(base_cur)
+
+
+def _apply_style(df):
+    return df.style.format(
+        {
+            "잔액(현지)": "{:,.2f}",  # Mixed currency default
+            "평가가치(표시)": fmt_disp,
+            "장부금액(Base)": fmt_base,
+        }
+    )
+
+
+# Base CFG
+base_cfg = get_currency_config(bs.get("base_currency", "KRW"))
+
 c1, c2, c3 = st.columns(3)
 with c1:
     st.markdown(f"**자산 ({display_currency})**")
     st.dataframe(
-        assets_df,
+        _apply_style(assets_df),
         width="stretch",
         hide_index=True,
         column_config={
-            "잔액(현지)": st.column_config.NumberColumn(format="%.2f"),
-            "평가가치(표시)": st.column_config.NumberColumn(format="%.0f"),
-            "장부금액(Base)": st.column_config.NumberColumn(format="%.0f"),
+            "잔액(현지)": st.column_config.NumberColumn(),
+            "평가가치(표시)": st.column_config.NumberColumn(),
+            "장부금액(Base)": st.column_config.NumberColumn(),
         },
     )
 with c2:
     st.markdown(f"**부채 ({display_currency})**")
     st.dataframe(
-        liab_df,
+        _apply_style(liab_df),
         width="stretch",
         hide_index=True,
         column_config={
-            "잔액(현지)": st.column_config.NumberColumn(format="%.2f"),
-            "평가가치(표시)": st.column_config.NumberColumn(format="%.0f"),
-            "장부금액(Base)": st.column_config.NumberColumn(format="%.0f"),
+            "잔액(현지)": st.column_config.NumberColumn(),
+            "평가가치(표시)": st.column_config.NumberColumn(),
+            "장부금액(Base)": st.column_config.NumberColumn(),
         },
     )
 with c3:
     st.markdown(f"**자본 ({display_currency})**")
     st.dataframe(
-        eq_df,
+        _apply_style(eq_df),
         width="stretch",
         hide_index=True,
         column_config={
-            "잔액(현지)": st.column_config.NumberColumn(format="%.2f"),
-            "평가가치(표시)": st.column_config.NumberColumn(format="%.0f"),
-            "장부금액(Base)": st.column_config.NumberColumn(format="%.0f"),
+            "잔액(현지)": st.column_config.NumberColumn(),
+            "평가가치(표시)": st.column_config.NumberColumn(),
+            "장부금액(Base)": st.column_config.NumberColumn(),
         },
     )
 
@@ -158,11 +185,14 @@ st.subheader("이번 달 손익(IS)")
 start = date(as_of.year, as_of.month, 1)
 end = as_of
 is_ = income_statement(session, start=start, end=end)
+# IS in base currency
+base_currency = "KRW"
+fmt_is = get_pandas_style_fmt(base_currency)
 
 col1, col2, col3 = st.columns(3)
-col1.metric("총 수익", krw(is_["total_income"]))
-col2.metric("총 비용", krw(is_["total_expense"]))
-col3.metric("순이익", krw(is_["net_profit"]))
+col1.metric("총 수익", format_currency(is_["total_income"], base_currency))
+col2.metric("총 비용", format_currency(is_["total_expense"], base_currency))
+col3.metric("순이익", format_currency(is_["net_profit"], base_currency))
 
 income_df = pd.DataFrame(is_["income"], columns=["계정", "금액"])
 expense_df = pd.DataFrame(is_["expense"], columns=["계정", "금액"])
@@ -171,16 +201,16 @@ c1, c2 = st.columns(2)
 with c1:
     st.markdown("**수익(Income)**")
     st.dataframe(
-        income_df,
+        income_df.style.format({"금액": fmt_is}),
         width="stretch",
         hide_index=True,
-        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+        column_config={"금액": st.column_config.NumberColumn()},
     )
 with c2:
     st.markdown("**비용(Expense)**")
     st.dataframe(
-        expense_df,
+        expense_df.style.format({"금액": fmt_is}),
         width="stretch",
         hide_index=True,
-        column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+        column_config={"금액": st.column_config.NumberColumn()},
     )

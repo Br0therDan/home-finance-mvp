@@ -40,10 +40,10 @@ class JournalLine(SQLModel, table=True):
     native_currency: str | None = Field(default=None)
     fx_rate: float | None = Field(default=None)
 
-    entry: "JournalEntry" = Relationship(back_populates="lines")
+    entry: "core.models.JournalEntry" = Relationship(back_populates="lines")
 
     # Unidirectional relationship to Account (no back_populates on Account)
-    account: "Account" = Relationship()
+    account: "core.models.Account" = Relationship()
 
 
 class JournalEntry(SQLModel, table=True):
@@ -56,7 +56,7 @@ class JournalEntry(SQLModel, table=True):
     source: str = Field(default="manual")
     created_at: datetime = Field(default_factory=datetime.now)
 
-    lines: list["JournalLine"] = Relationship(
+    lines: list["core.models.JournalLine"] = Relationship(
         back_populates="entry", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -75,9 +75,9 @@ class Asset(SQLModel, table=True):
     note: str = Field(default="")
 
     # Unidirectional relationship to Account (no back_populates on Account)
-    linked_account: "Account" = Relationship()
+    linked_account: "core.models.Account" = Relationship()
 
-    valuations: list["AssetValuation"] = Relationship(
+    valuations: list["core.models.AssetValuation"] = Relationship(
         back_populates="asset", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -96,7 +96,7 @@ class AssetValuation(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
-    asset: "Asset" = Relationship(back_populates="valuations")
+    asset: "core.models.Asset" = Relationship(back_populates="valuations")
 
 
 class JournalEntryInput(BaseModel):

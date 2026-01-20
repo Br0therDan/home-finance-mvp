@@ -119,12 +119,22 @@ st.divider()
 
 is_fx = target_currency != base_cur
 
+from ui.utils import get_currency_config
+
+base_cfg = get_currency_config(base_cur)
+target_cfg = get_currency_config(target_currency)
+
 with st.form("txn_form_rest", clear_on_submit=True):
+    is_base_int = base_cfg["precision"] == 0
+    base_step = int(base_cfg["step"]) if is_base_int else float(base_cfg["step"])
+    base_val = int(0) if is_base_int else 0.0
+
     amount_base = st.number_input(
         f"장부 금액 ({base_cur})",
-        min_value=0.0,
-        value=0.0,
-        step=1000.0,
+        min_value=base_val,
+        value=base_val,
+        step=base_step,
+        format=base_cfg["format"],
         help="외화 거래인 경우 환율에 따라 자동 계산됩니다.",
     )
 
@@ -137,8 +147,18 @@ with st.form("txn_form_rest", clear_on_submit=True):
         )
         col1, col2 = st.columns(2)
         with col1:
+            is_tgt_int = target_cfg["precision"] == 0
+            tgt_step = (
+                int(target_cfg["step"]) if is_tgt_int else float(target_cfg["step"])
+            )
+            tgt_val = int(0) if is_tgt_int else 0.0
+
             native_amount = st.number_input(
-                f"외화 금액 ({target_currency})", min_value=0.0, value=0.0, step=0.01
+                f"외화 금액 ({target_currency})",
+                min_value=tgt_val,
+                value=tgt_val,
+                step=tgt_step,
+                format=target_cfg["format"],
             )
         with col2:
             latest_rate = get_latest_rate(session, base_cur, target_currency)

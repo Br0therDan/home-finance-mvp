@@ -18,6 +18,7 @@ from core.services.ledger_service import (
 )
 from core.services.account_service import create_user_account
 import time
+from ui.utils import get_currency_config, get_pandas_style_fmt
 
 st.set_page_config(page_title="Day0 Setup", page_icon="🧭", layout="wide")
 
@@ -159,8 +160,45 @@ if opening_equity is None:
     opening_equity = get_account_by_name(session, "기초자본(Opening Balance)", "EQUITY")
 
 if opening_equity is None:
-    st.error("기초순자산(EQUITY) 계정이 없습니다. 마이그레이션을 먼저 적용하세요.")
-    st.stop()
+    # Auto-create if missing (Self-healing)
+    try:
+        # 1. Ensure L1 Equity exists (ID 3001 as per seed)
+        l1_equity = session.get(Account, 3001)
+        if not l1_equity:
+            l1_equity = Account(
+                id=3001,
+                name="자본/순자산",
+                type="EQUITY",
+                level=1,
+                is_system=True,
+                allow_posting=False,
+                is_active=True,
+                currency="KRW",
+            )
+            session.add(l1_equity)
+            session.commit()  # Commit to ensure parent exists for FK
+
+        # 2. Create L2 Opening Equity (ID 300101)
+        opening_equity = Account(
+            id=300101,
+            name="기초순자산(Opening Equity)",
+            type="EQUITY",
+            level=2,
+            parent_id=3001,
+            is_system=True,
+            allow_posting=True,
+            is_active=True,
+            currency="KRW",
+        )
+        session.add(opening_equity)
+        session.commit()
+        session.refresh(opening_equity)
+        opening_equity = opening_equity.model_dump()
+        st.toast("기초순자산 계정(300101)이 복구되었습니다.")
+
+    except Exception as e:
+        st.error(f"기초순자산(EQUITY) 계정이 없으며 자동 생성에 실패했습니다: {e}")
+        st.stop()
 
 # Ensure the equity account is active
 if not opening_equity.get("is_active", True):
@@ -251,12 +289,35 @@ with st.form("opening_balance_form"):
                 format_func=lambda x: x[1],
                 key=f"asset_account_{i}",
             )
+            # Detect currency of selected account
+            sel_acc_tuple = st.session_state.get(f"asset_account_{i}")
+            # Tuple is (id, name). We need to find the dict to get currency. (optimization: lookup map)
+            # Since asset_accounts is list of tuples, we check the full 'posting_accounts' list
+            selected_currency = "KRW"
+            if sel_acc_tuple:
+                acc_info = next(
+                    (a for a in posting_accounts if a["id"] == sel_acc_tuple[0]), None
+                )
+                if acc_info:
+                    selected_currency = acc_info.get("currency", "KRW")
+
+            curr_cfg = get_currency_config(selected_currency)
+
         with a2:
+            is_int = curr_cfg["precision"] == 0
+            safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
+            safe_val = (
+                int(st.session_state.get(f"asset_amount_{i}", 0))
+                if is_int
+                else float(st.session_state.get(f"asset_amount_{i}", 0.0))
+            )
+
             st.number_input(
                 f"금액 #{i + 1}",
-                min_value=0.0,
-                step=10000.0,
-                value=0.0,
+                min_value=0 if is_int else 0.0,
+                step=safe_step,
+                format=curr_cfg["format"],
+                value=safe_val,
                 key=f"asset_amount_{i}",
             )
 
@@ -274,12 +335,33 @@ with st.form("opening_balance_form"):
                 format_func=lambda x: x[1],
                 key=f"liab_account_{i}",
             )
+            # Detect currency
+            sel_acc_tuple = st.session_state.get(f"liab_account_{i}")
+            selected_currency = "KRW"
+            if sel_acc_tuple:
+                acc_info = next(
+                    (a for a in posting_accounts if a["id"] == sel_acc_tuple[0]), None
+                )
+                if acc_info:
+                    selected_currency = acc_info.get("currency", "KRW")
+
+            curr_cfg = get_currency_config(selected_currency)
+
         with l2:
+            is_int = curr_cfg["precision"] == 0
+            safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
+            safe_val = (
+                int(st.session_state.get(f"liab_amount_{i}", 0))
+                if is_int
+                else float(st.session_state.get(f"liab_amount_{i}", 0.0))
+            )
+
             st.number_input(
                 f"금액 #{i + 1}",
-                min_value=0.0,
-                step=10000.0,
-                value=0.0,
+                min_value=0 if is_int else 0.0,
+                step=safe_step,
+                format=curr_cfg["format"],
+                value=safe_val,
                 key=f"liab_amount_{i}",
             )
 
@@ -289,6 +371,7 @@ with st.form("opening_balance_form"):
 
     st.markdown("#### 전표 미리보기")
     account_name = {a["id"]: a["name"] for a in accounts}
+    account_currency = {a["id"]: a.get("currency", "KRW") for a in accounts}
 
     asset_lines: list[JournalLine] = []
     for i in range(st.session_state.asset_rows):
@@ -316,23 +399,27 @@ with st.form("opening_balance_form"):
     total_debit = 0.0
     total_credit = 0.0
     for line in asset_lines:
+        curr = account_currency.get(line.account_id, "KRW")
         preview_rows.append(
             {
                 "계정": account_name.get(line.account_id, str(line.account_id)),
                 "차변": line.debit,
                 "대변": 0.0,
                 "구분": "자산",
+                "통화": curr,
             }
         )
         total_debit += line.debit
 
     for line in liability_lines:
+        curr = account_currency.get(line.account_id, "KRW")
         preview_rows.append(
             {
                 "계정": account_name.get(line.account_id, str(line.account_id)),
                 "차변": 0.0,
                 "대변": line.credit,
                 "구분": "부채",
+                "통화": curr,
             }
         )
         total_credit += line.credit
@@ -341,27 +428,61 @@ with st.form("opening_balance_form"):
     if abs(gap) > 1e-9:
         if gap > 0:
             preview_rows.append(
-                {"계정": "기초순자산", "차변": 0.0, "대변": gap, "구분": "자본"}
+                {
+                    "계정": "기초순자산",
+                    "차변": 0.0,
+                    "대변": gap,
+                    "구분": "자본",
+                    "통화": "KRW",
+                }
             )
             total_credit += gap
         else:
             preview_rows.append(
-                {"계정": "기초순자산", "차변": -gap, "대변": 0.0, "구분": "자본"}
+                {
+                    "계정": "기초순자산",
+                    "차변": -gap,
+                    "대변": 0.0,
+                    "구분": "자본",
+                    "통화": "KRW",
+                }
             )
             total_debit += -gap
 
     if preview_rows:
         preview_df = pd.DataFrame(preview_rows)
+        # Apply standard formatting for column config
+        # Since it's a mixed table (different currencies potentially),
+        # we can't force one currency symbol easily on the column unless we use just number format
+        # or separate native amount. For Day0 (mostly KRW), let's stick to standard number format
+        # but with comma.
+
+        # We will use simple NumberColumn without specific currency symbol to avoid confusion if mixed,
+        # OR we default to KRW style format.
+        # User asked for: "Currency symbol based on account's base currency".
+        # Streamlit column config applies to the WHOLE column. We can't vary format per row.
+        # Solution: Use simple comma formatting (format="%.2f" or "%d" depending on majority?)
+        # Better: Just use standard comma format.
+
         st.dataframe(
             preview_df,
             use_container_width=True,
             hide_index=True,
             column_config={
-                "차변": st.column_config.NumberColumn(format="%.0f"),
-                "대변": st.column_config.NumberColumn(format="%.0f"),
+                "차변": st.column_config.NumberColumn(format="%.2f"),
+                "대변": st.column_config.NumberColumn(format="%.2f"),
+                # "통화" column added for clarity
             },
         )
-        st.caption(f"합계: 차변 {total_debit:,.0f} / 대변 {total_credit:,.0f}")
+        # Summary footer formatting
+        from ui.utils import format_currency
+
+        disp_debit = format_currency(
+            total_debit, "KRW"
+        )  # Day0 total usually in base currency
+        disp_credit = format_currency(total_credit, "KRW")
+
+        st.caption(f"합계: 차변 {disp_debit} / 대변 {disp_credit}")
     else:
         st.info("자산 또는 부채 라인을 입력하세요.")
 

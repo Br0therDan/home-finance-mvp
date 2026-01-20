@@ -24,6 +24,7 @@ from core.services.asset_transaction_service import dispose_asset, purchase_asse
 from core.services.ledger_service import account_balances, list_posting_accounts
 from core.services.settings_service import get_base_currency
 from core.services.valuation_service import ValuationService
+from ui.utils import get_currency_config, get_pandas_style_fmt
 
 NO_ACTION = "-"
 EDIT_ACTION = "✏️ 편집"
@@ -97,16 +98,15 @@ if has_mismatch:
     )
     with st.expander("대사 내역 (Reconciliation Details)", expanded=True):
         rec_df = pd.DataFrame(reconcile_items)
+        fmt_krw = get_pandas_style_fmt("KRW")
         st.dataframe(
-            rec_df,
+            rec_df.style.format(
+                {"ledger": fmt_krw, "inventory": fmt_krw, "diff": fmt_krw}
+            ),
             column_config={
-                "ledger": st.column_config.NumberColumn("원장 잔액", format="%.0f"),
-                "inventory": st.column_config.NumberColumn(
-                    "자산대장 총액", format="%.0f"
-                ),
-                "diff": st.column_config.NumberColumn(
-                    "차액 (Ledger - Inv)", format="%.0f"
-                ),
+                "ledger": st.column_config.NumberColumn("원장 잔액"),
+                "inventory": st.column_config.NumberColumn("자산대장 총액"),
+                "diff": st.column_config.NumberColumn("차액 (Ledger - Inv)"),
             },
             hide_index=True,
             use_container_width=True,
@@ -153,9 +153,35 @@ def _dialog_purchase_asset(asset_accounts: list, liab_accounts: list):
             format_func=lambda x: x[1],
         )
 
+        # Detect Currency for Input
+        # linked is tuple (id, name). We need object.
+        # accounts is available in outer scope? No, need to pass it or lookup.
+        # accounts variable is in global scope of script... check line 40.
+        # It's better to lookup.
+        sel_curr = "KRW"
+        if linked:
+            # Optimization: We can pass currency in the tuple or look it up from 'accounts' global (safe in streamlit script?)
+            # accounts is defined at line 40. It is available.
+            acc_obj = next((a for a in accounts if a["id"] == linked[0]), None)
+            if acc_obj:
+                sel_curr = acc_obj.get("currency", "KRW")
+
+        from ui.utils import get_currency_config
+
+        curr_cfg = get_currency_config(sel_curr)
+
         acq_date = st.date_input("매입일 (취득일)", value=date.today())
+
+        is_int = curr_cfg["precision"] == 0
+        safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
+        safe_val = int(0) if is_int else 0.0
+
         acq_cost = st.number_input(
-            "매입 금액 (Cost)", min_value=0.0, value=0.0, step=10000.0
+            f"매입 금액 (Cost) - {sel_curr}",
+            min_value=safe_val,
+            value=safe_val,
+            step=safe_step,
+            format=curr_cfg["format"],
         )
         note = st.text_area("메모", value="")
 
@@ -201,9 +227,17 @@ for a in assets:
     linked_account_id = int(a["linked_account_id"])
     is_ledger_based = linked_account_id in ledger_balances
 
+    # Get Linked Account Currency
+    acc_obj = next((acc for acc in accounts if acc["id"] == linked_account_id), None)
+    currency = acc_obj.get("currency", "KRW") if acc_obj else "KRW"
+
     # Prepare display strings immediately
     if lv:
-        current_val_str = f"{lv['value_native']:,.0f} {lv['currency']}"
+        current_val_str = (
+            f"{lv['value_native']:,.2f} {lv['currency']}"
+            if lv["currency"] != "KRW"
+            else f"{lv['value_native']:,.0f} {lv['currency']}"
+        )
         val_date_str = lv["as_of_date"]
         val_native = float(lv["value_native"])
     else:
@@ -218,6 +252,7 @@ for a in assets:
             "분류": a["asset_class"],
             "취득일": a["acquisition_date"],
             "취득가": float(a["acquisition_cost"]),
+            "통화": currency,  # Added for context
             "최근평가": val_native,
             "평가일": val_date_str,
             "최신평가액": current_val_str,
@@ -274,11 +309,34 @@ def _dialog_edit_asset(asset: dict, asset_accounts: list):
             format_func=lambda x: x[1],
             index=acc_idx,
         )
+
+        # Detect currency logic
+        sel_curr = "KRW"
+        if new_linked:
+            acc_obj = next((a for a in accounts if a["id"] == new_linked[0]), None)
+            if acc_obj:
+                sel_curr = acc_obj.get("currency", "KRW")
+
+        from ui.utils import get_currency_config
+
+        curr_cfg = get_currency_config(sel_curr)
+
         new_date = st.date_input(
             "취득일", value=date.fromisoformat(str(asset["취득일"]))
         )
+
+        is_int = curr_cfg["precision"] == 0
+        safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
+        init_val = float(asset["취득가"])
+        safe_val = int(init_val) if is_int else init_val
+        min_val = int(0) if is_int else 0.0
+
         new_cost = st.number_input(
-            "취득가", min_value=0.0, value=float(asset["취득가"]), step=10000.0
+            f"취득가 ({sel_curr})",
+            min_value=min_val,
+            value=safe_val,
+            step=safe_step,
+            format=curr_cfg["format"],
         )
         new_note = st.text_area("메모", value=asset["메모"])
 
@@ -327,14 +385,34 @@ def _dialog_dispose_asset(asset: dict, all_accounts: list):
 
     with st.form("dispose_form"):
         st.write(f"대상 자산: **{asset['자산명']}**")
-        st.write(f"장부 가액(취득가): {asset['취득가']:,.0f} KRW")
+        st.write(
+            f"장부 가액(취득가): {asset['취득가']:,.0f} KRW"
+        )  # Should use currency awareness here too if possible, but asset dict lacks straight currency access without lookup.
+        # But wait, we added "통화" to rows! So asset dict passed here MIGHT have it if it comes from df row.
+        # Let's check where _dialog_dispose_asset is called. It's called with original_row from df.
+        # So asset dict definitely has '통화'.
+        curr = asset.get("통화", "KRW")
 
         sale_date = st.date_input("처분일(매각일)", value=date.today())
+
+        from ui.utils import get_currency_config
+
+        curr_cfg = get_currency_config(
+            curr
+        )  # Assuming sale currency ~ asset currency or we could ask. Usually same or base.
+
+        is_int = curr_cfg["precision"] == 0
+        safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
+        init_val = float(asset["취득가"])
+        safe_val = int(init_val) if is_int else init_val
+        min_val = int(0) if is_int else 0.0
+
         sale_price = st.number_input(
-            "매각 금액(실수령액)",
-            min_value=0.0,
-            value=float(asset["취득가"]),
-            step=10000.0,
+            f"매각 금액(실수령액) - {curr}",
+            min_value=min_val,
+            value=safe_val,
+            step=safe_step,
+            format=curr_cfg["format"],
         )
 
         deposit_acc = st.selectbox(
@@ -350,9 +428,9 @@ def _dialog_dispose_asset(asset: dict, all_accounts: list):
         # Preview Gain/Loss
         gain_loss = sale_price - float(asset["취득가"])
         if gain_loss > 0:
-            st.info(f"예상 처분 이익: {gain_loss:,.0f} KRW")
+            st.info(f"예상 처분 이익: {gain_loss:,.2f} {curr}")
         elif gain_loss < 0:
-            st.error(f"예상 처분 손실: {abs(gain_loss):,.0f} KRW")
+            st.error(f"예상 처분 손실: {abs(gain_loss):,.2f} {curr}")
         else:
             st.write("처분 손익 없음")
 
@@ -376,8 +454,6 @@ def _dialog_dispose_asset(asset: dict, all_accounts: list):
 
 
 def _handle_asset_action(df: pd.DataFrame, asset_accounts: list):
-    # Action handling using AgGrid selection logic (placeholder since we use selectbox column)
-    # But since AgGrid is community, we use the "Action" column strategy
     pass
 
 
@@ -395,20 +471,19 @@ else:
             "자산명",
             "분류",
             "취득일",
+            "통화",
             "취득가",
             "최신평가액",
-            "평가기준일",
             "연결계정",
-            "구분",
             "원장잔액",
         ]
         st.dataframe(
-            df[cols_to_show],
+            df[cols_to_show].style.format({"취득가": "{:,.2f}", "원장잔액": "{:,.2f}"}),
             width="stretch",
             hide_index=True,
             column_config={
-                "취득가": st.column_config.NumberColumn(format="%.0f"),
-                "원장잔액": st.column_config.NumberColumn(format="%.0f"),
+                "취득가": st.column_config.NumberColumn(),
+                "원장잔액": st.column_config.NumberColumn(),
             },
         )
     else:
@@ -417,11 +492,10 @@ else:
             "자산명",
             "분류",
             "취득일",
+            "통화",
             "취득가",
             "최신평가액",
-            "평가기준일",
             "연결계정",
-            "구분",
             "원장잔액",
             "⋯",
         ]
@@ -430,8 +504,25 @@ else:
         gb = GridOptionsBuilder.from_dataframe(grid_df)
         gb.configure_default_column(resizable=True, sortable=True, filter=True)
         gb.configure_column("id", hide=True)
-        gb.configure_column("취득가", valueFormatter="x.toLocaleString()")
-        gb.configure_column("원장잔액", valueFormatter="x.toLocaleString()")
+
+        # JS Formatter for Currency
+        # We can't easily access '통화' column in '취득가' valueFormatter unless we validly know row params.
+        # But 'valueFormatter' gets 'params'. params.data has the row data.
+        # So we can check params.data.통화.
+
+        js_currency_renderer = JsCode(
+            """
+        function(params) {
+            if (!params.value) return '';
+            const currency = params.data.통화 || 'KRW';
+            const digits = (currency === 'KRW' || currency === 'JPY') ? 0 : 2;
+            return params.value.toLocaleString(undefined, {minimumFractionDigits: digits, maximumFractionDigits: digits});
+        }
+        """
+        )
+
+        gb.configure_column("취득가", valueFormatter=js_currency_renderer)
+        gb.configure_column("원장잔액", valueFormatter=js_currency_renderer)
 
         # Action column with dropdown
         gb.configure_column(
@@ -449,6 +540,7 @@ else:
         grid_response = AgGrid(
             grid_df,
             gridOptions=grid_options,
+            allow_unsafe_jscode=True,  # Enable JS
             data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
             update_mode=GridUpdateMode.VALUE_CHANGED,
             theme="balham",
@@ -541,10 +633,10 @@ else:
                 ]
             )
             st.dataframe(
-                hist_df,
+                hist_df.style.format({"금액": "{:,.2f}"}),
                 use_container_width=True,
                 hide_index=True,
-                column_config={"금액": st.column_config.NumberColumn(format="%.0f")},
+                column_config={"금액": st.column_config.NumberColumn()},
             )
         else:
             st.caption("평가 이력이 없습니다.")
