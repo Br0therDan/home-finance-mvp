@@ -162,6 +162,12 @@ with st.form("txn_form_rest", clear_on_submit=True):
             )
         with col2:
             latest_rate = get_latest_rate(session, base_cur, target_currency)
+            rate_missing = latest_rate is None
+            if rate_missing:
+                st.warning(
+                    f"{base_cur}/{target_currency} 환율이 없습니다. 설정에서 환율을 먼저 저장하세요."
+                )
+                latest_rate = 0.0
             fx_rate = st.number_input(
                 f"환율 ({base_cur}/{target_currency})",
                 min_value=0.0,
@@ -179,6 +185,8 @@ with st.form("txn_form_rest", clear_on_submit=True):
     if submitted:
         if amount_base <= 0 and native_amount <= 0:
             st.error("금액을 입력해 주세요.")
+        elif is_fx and fx_rate <= 0:
+            st.error("환율이 없습니다. 설정에서 환율을 저장해 주세요.")
         else:
             # Final calculation for submission
             final_amount = (

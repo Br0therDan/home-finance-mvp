@@ -24,6 +24,11 @@ display_currency = st.session_state.get("display_currency", "KRW")
 curr_cfg = get_currency_config(display_currency)
 
 bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
+if bs.get("missing_rates"):
+    missing_pairs = ", ".join(
+        f"{base}/{quote}" for base, quote in bs["missing_rates"]
+    )
+    st.warning(f"환율이 없어 일부 값은 장부 기준으로 표시됩니다: {missing_pairs}")
 
 # --- Valuation Calculation ---
 val_service = ValuationService(session)
@@ -51,7 +56,12 @@ for acc in bs["assets"]:
     if manual_val:
         # Convert manual valuation to Base Currency
         rate = get_latest_rate(session, bs["base_currency"], manual_val["currency"])
-        valuation_base_total += manual_val["value_native"] * rate
+        if rate is None:
+            st.warning(
+                f"{bs['base_currency']}/{manual_val['currency']} 환율이 없어 평가값을 제외했습니다."
+            )
+        else:
+            valuation_base_total += manual_val["value_native"] * rate
     else:
         # Fallback to book value
         valuation_base_total += acc["book_value_base"]
