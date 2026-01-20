@@ -1,5 +1,7 @@
-import streamlit as st
 from datetime import date
+
+import streamlit as st
+
 from core.db import Session
 from core.models import JournalEntryInput, JournalLine
 from core.services.fx_service import get_latest_rate

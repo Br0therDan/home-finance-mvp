@@ -1,4 +1,5 @@
 from datetime import date
+
 from core.models import RepaymentMethod
 from core.services.loan_service import generate_loan_schedule, get_loan_summary
 

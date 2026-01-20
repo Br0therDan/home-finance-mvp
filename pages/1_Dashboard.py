@@ -1,6 +1,8 @@
+from datetime import date
+
 import pandas as pd
 import streamlit as st
-from datetime import date
+
 from core.db import Session
 from core.services.asset_service import (
     list_assets,

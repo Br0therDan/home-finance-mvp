@@ -1,5 +1,6 @@
 import streamlit as st
-from core.db import init_db, Session
+
+from core.db import Session, init_db
 
 
 def main():

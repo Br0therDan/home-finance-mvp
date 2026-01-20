@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 from datetime import date, datetime
-from typing import Optional, List
 
 # ==========================================
 # Enums or Constants (Simple Classes)
@@ -73,6 +73,8 @@ class Account:
         level: int = 1,
         allow_posting: bool = True,
         currency: str = "KRW",
+        description: str | None = None,
+        account_number: str | None = None,
     ):
         self.id = id
         self.name = name
@@ -83,6 +85,8 @@ class Account:
         self.level = level
         self.allow_posting = bool(allow_posting)
         self.currency = currency
+        self.description = description
+        self.account_number = account_number
 
 
 class JournalLine:
@@ -175,6 +179,30 @@ class InvestmentProfile:
         self.security_type = security_type
         self.isin = isin
         self.broker = broker
+
+
+class RealEstateProfile:
+    def __init__(
+        self,
+        id: int = None,
+        asset_id: int = None,
+        address: str = None,
+        property_type: str = "APARTMENT",
+        area_sqm: float = None,
+        exclusive_area_sqm: float = None,
+        floor: int = None,
+        total_floors: int = None,
+        completion_date: date = None,
+    ):
+        self.id = id
+        self.asset_id = asset_id
+        self.address = address
+        self.property_type = property_type
+        self.area_sqm = area_sqm
+        self.exclusive_area_sqm = exclusive_area_sqm
+        self.floor = floor
+        self.total_floors = total_floors
+        self.completion_date = completion_date
 
 
 class InvestmentLot:
@@ -387,7 +415,7 @@ class JournalEntryInput:
         self,
         entry_date: date,
         description: str,
-        lines: List[JournalLine],
+        lines: list[JournalLine],
         source: str = "manual",
     ):
         self.entry_date = entry_date

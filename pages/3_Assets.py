@@ -1,6 +1,8 @@
+from datetime import date
+
 import pandas as pd
 import streamlit as st
-from datetime import date
+
 from core.db import Session
 
 try:
@@ -13,6 +15,7 @@ except ImportError:
     DataReturnMode = None
     GridUpdateMode = None
 
+from core.models import AssetType, DepreciationMethod
 from core.services.asset_service import (
     delete_asset,
     list_assets,
@@ -27,7 +30,6 @@ from core.services.valuation_service import (
     update_market_valuations,
     upsert_asset_valuation,
 )
-from core.models import AssetType, DepreciationMethod
 from ui.utils import get_pandas_style_fmt
 
 NO_ACTION = "-"
@@ -125,7 +127,7 @@ if has_mismatch:
                 "diff": st.column_config.NumberColumn("차액 (Ledger - Inv)"),
             },
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 else:
     st.success(
@@ -695,7 +697,7 @@ else:
             )
             st.dataframe(
                 hist_df.style.format({"금액": "{:,.2f}"}),
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={"금액": st.column_config.NumberColumn()},
             )

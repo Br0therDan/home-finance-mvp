@@ -49,6 +49,6 @@ def init_db():
         DB_PATH.parent.mkdir(parents=True)
 
     with get_connection() as conn:
-        with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+        with open(SCHEMA_PATH, encoding="utf-8") as f:
             schema_sql = f.read()
         conn.executescript(schema_sql)

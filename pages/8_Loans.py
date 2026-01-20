@@ -1,6 +1,8 @@
 from datetime import date
+
 import pandas as pd
 import streamlit as st
+
 from core.db import Session
 from core.models import RepaymentMethod
 from core.services.loan_service import generate_loan_schedule, get_loan_summary
@@ -138,5 +140,5 @@ with tabs[2]:
                 }
             ),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )

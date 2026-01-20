@@ -1,4 +1,5 @@
 from datetime import date
+
 from core.services.asset_service import (
     add_investment_lot,
     create_asset,

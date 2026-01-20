@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 import sqlite3
-from typing import Optional
 
 
 def get_settings(conn: sqlite3.Connection):

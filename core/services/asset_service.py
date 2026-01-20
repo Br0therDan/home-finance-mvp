@@ -1,15 +1,7 @@
 from __future__ import annotations
-import sqlite3
-from datetime import date, datetime
-from typing import List, Dict, Optional, Any
 
-from core.models import (
-    Asset,
-    AssetValuation,
-    InvestmentEvent,
-    InvestmentLot,
-    InvestmentProfile,
-)
+import sqlite3
+from datetime import date
 
 
 def create_asset(
@@ -98,6 +90,39 @@ def add_investment_lot(
             float(fees_native),
             currency.strip(),
             fx_rate,
+        ),
+    )
+    return cursor.lastrowid
+
+
+def create_real_estate_profile(
+    conn: sqlite3.Connection,
+    asset_id: int,
+    address: str,
+    property_type: str = "APARTMENT",
+    area_sqm: float | None = None,
+    exclusive_area_sqm: float | None = None,
+    floor: int | None = None,
+    total_floors: int | None = None,
+    completion_date: date | None = None,
+) -> int:
+    cursor = conn.execute(
+        """INSERT INTO real_estate_profiles (asset_id, address, property_type, area_sqm, exclusive_area_sqm, 
+                                           floor, total_floors, completion_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            asset_id,
+            address.strip(),
+            property_type.strip().upper(),
+            float(area_sqm) if area_sqm is not None else None,
+            float(exclusive_area_sqm) if exclusive_area_sqm is not None else None,
+            floor,
+            total_floors,
+            (
+                completion_date.isoformat()
+                if isinstance(completion_date, date)
+                else completion_date
+            ),
         ),
     )
     return cursor.lastrowid
@@ -194,8 +219,22 @@ def list_assets(conn: sqlite3.Connection) -> list[dict]:
     return output
 
 
-def get_asset(conn: sqlite3.Connection, asset_id: int) -> Optional[dict]:
+def get_asset(conn: sqlite3.Connection, asset_id: int) -> dict | None:
     row = conn.execute("SELECT * FROM assets WHERE id = ?", (asset_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_investment_profile(conn: sqlite3.Connection, asset_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM investment_profiles WHERE asset_id = ?", (asset_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_real_estate_profile(conn: sqlite3.Connection, asset_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM real_estate_profiles WHERE asset_id = ?", (asset_id,)
+    ).fetchone()
     return dict(row) if row else None
 
 
@@ -238,13 +277,70 @@ def update_asset(
     )
 
 
+def update_investment_profile(
+    conn: sqlite3.Connection,
+    asset_id: int,
+    ticker: str,
+    trading_currency: str,
+    exchange: str | None = None,
+    security_type: str | None = None,
+    isin: str | None = None,
+    broker: str | None = None,
+) -> None:
+    conn.execute(
+        """UPDATE investment_profiles SET ticker = ?, exchange = ?, trading_currency = ?, 
+                                        security_type = ?, isin = ?, broker = ?
+           WHERE asset_id = ?""",
+        (
+            ticker.strip(),
+            exchange.strip() if exchange else None,
+            trading_currency.strip(),
+            security_type.strip() if security_type else None,
+            isin.strip() if isin else None,
+            broker.strip() if broker else None,
+            asset_id,
+        ),
+    )
+
+
+def update_real_estate_profile(
+    conn: sqlite3.Connection,
+    asset_id: int,
+    address: str,
+    property_type: str,
+    area_sqm: float | None = None,
+    exclusive_area_sqm: float | None = None,
+    floor: int | None = None,
+    total_floors: int | None = None,
+    completion_date: date | None = None,
+) -> None:
+    conn.execute(
+        """UPDATE real_estate_profiles SET address = ?, property_type = ?, area_sqm = ?, 
+                                         exclusive_area_sqm = ?, floor = ?, total_floors = ?, completion_date = ?
+           WHERE asset_id = ?""",
+        (
+            address.strip(),
+            property_type.strip().upper(),
+            float(area_sqm) if area_sqm is not None else None,
+            float(exclusive_area_sqm) if exclusive_area_sqm is not None else None,
+            floor,
+            total_floors,
+            (
+                completion_date.isoformat()
+                if isinstance(completion_date, date)
+                else completion_date
+            ),
+            asset_id,
+        ),
+    )
+
+
 def delete_asset(conn: sqlite3.Connection, asset_id: int) -> None:
     conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
 
 
 def calculate_asset_depreciation(conn: sqlite3.Connection, as_of: date | None = None):
     # This was a complex one, let's simplify for the DTO world
-    from core.services.ledger_service import account_balances
 
     if as_of is None:
         as_of = date.today()
@@ -424,6 +520,9 @@ def get_asset_investments(conn: sqlite3.Connection, asset_id: int) -> dict:
     profile_row = conn.execute(
         "SELECT * FROM investment_profiles WHERE asset_id = ?", (asset_id,)
     ).fetchone()
+    re_profile_row = conn.execute(
+        "SELECT * FROM real_estate_profiles WHERE asset_id = ?", (asset_id,)
+    ).fetchone()
     lots_rows = conn.execute(
         "SELECT * FROM investment_lots WHERE asset_id = ? ORDER BY lot_date",
         (asset_id,),
@@ -435,6 +534,7 @@ def get_asset_investments(conn: sqlite3.Connection, asset_id: int) -> dict:
 
     return {
         "profile": dict(profile_row) if profile_row else None,
+        "real_estate_profile": dict(re_profile_row) if re_profile_row else None,
         "lots": [dict(r) for r in lots_rows],
         "events": [dict(r) for r in events_rows],
     }

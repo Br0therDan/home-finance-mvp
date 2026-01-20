@@ -1,9 +1,7 @@
 from __future__ import annotations
-import sqlite3
-from datetime import date, timedelta
-from typing import List, Dict, Optional
 
-from core.models import Loan, LoanSchedule, RepaymentMethod
+import sqlite3
+from datetime import date
 
 
 def generate_loan_schedule(conn: sqlite3.Connection, loan_id: int) -> None:

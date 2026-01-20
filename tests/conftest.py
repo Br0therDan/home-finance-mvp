@@ -1,7 +1,8 @@
-import sys
 import sqlite3
-import pytest
+import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 if ROOT.as_posix() not in sys.path:

@@ -1,6 +1,8 @@
 from datetime import date, timedelta
+
 import pandas as pd
 import streamlit as st
+
 from core.db import Session
 from core.services.ledger_service import list_posting_accounts
 from core.services.settings_service import get_base_currency
@@ -119,7 +121,7 @@ if subscriptions:
                 "활성": "Y" if sub["is_active"] else "N",
             }
         )
-    st.dataframe(pd.DataFrame(table_rows), use_container_width=True)
+    st.dataframe(pd.DataFrame(table_rows), width="stretch")
 else:
     st.info("등록된 정기 일정이 없습니다.")
 
@@ -154,7 +156,7 @@ else:
             }
             for item in projections
         ]
-        st.dataframe(pd.DataFrame(projection_rows), use_container_width=True)
+        st.dataframe(pd.DataFrame(projection_rows), width="stretch")
     else:
         st.info("선택한 기간에 예정된 정기 일정이 없습니다.")
 
@@ -167,6 +169,6 @@ if st.button("만기 일정 처리 및 자동 분개", type="primary"):
         results = process_due_subscriptions(session, as_of=as_of, create_entries=True)
     if results:
         st.success(f"{len(results)}건 처리되었습니다.")
-        st.dataframe(pd.DataFrame(results), use_container_width=True)
+        st.dataframe(pd.DataFrame(results), width="stretch")
     else:
         st.info("처리할 만기 일정이 없습니다.")

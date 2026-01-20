@@ -1,9 +1,9 @@
 from __future__ import annotations
+
 import sqlite3
 from datetime import date
-from typing import List, Dict, Optional, Any
 
-from core.models import Account, JournalEntry, JournalEntryInput, JournalLine
+from core.models import JournalEntryInput, JournalLine
 
 
 def _validate_entry(lines: list[JournalLine]) -> None:
@@ -110,21 +110,8 @@ def list_posting_accounts(
     return [dict(r) for r in rows]
 
 
-def get_account(conn: sqlite3.Connection, account_id: int) -> Optional[dict]:
+def get_account(conn: sqlite3.Connection, account_id: int) -> dict | None:
     row = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
-    return dict(row) if row else None
-
-
-def get_account_by_name(
-    conn: sqlite3.Connection, name: str, type_: str | None = None
-) -> Optional[dict]:
-    query = "SELECT * FROM accounts WHERE name = ?"
-    params = [name]
-    if type_:
-        query += " AND type = ?"
-        params.append(type_)
-
-    row = conn.execute(query, params).fetchone()
     return dict(row) if row else None
 
 
@@ -361,7 +348,7 @@ def monthly_cashflow(conn: sqlite3.Connection, year: int):
         "%savings%",
     ]
     name_clauses = " OR ".join(
-        f"LOWER(a.name) LIKE LOWER(?)" for _ in range(len(cash_name_patterns))
+        "LOWER(a.name) LIKE LOWER(?)" for _ in range(len(cash_name_patterns))
     )
 
     start_date = f"{year}-01-01"

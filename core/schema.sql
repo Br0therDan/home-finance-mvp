@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     is_system INTEGER NOT NULL DEFAULT 0,
     allow_posting INTEGER NOT NULL DEFAULT 0,
     currency TEXT NOT NULL DEFAULT 'KRW',
+    description TEXT,
+    account_number TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (parent_id) REFERENCES accounts (id)
@@ -104,6 +106,19 @@ CREATE TABLE IF NOT EXISTS investment_profiles (
     security_type TEXT,
     isin TEXT,
     broker TEXT,
+    FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS real_estate_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    asset_id INTEGER NOT NULL UNIQUE,
+    address TEXT NOT NULL,
+    property_type TEXT NOT NULL, -- APARTMENT, VILLA, OFFICE, LAND, etc.
+    area_sqm REAL,
+    exclusive_area_sqm REAL,
+    floor INTEGER,
+    total_floors INTEGER,
+    completion_date DATE,
     FOREIGN KEY (asset_id) REFERENCES assets (id) ON DELETE CASCADE
 );
 
