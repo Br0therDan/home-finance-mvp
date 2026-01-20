@@ -2,25 +2,8 @@ import streamlit as st
 from sqlmodel import Session
 
 from core.db import engine
-from core.services.fx_service import get_latest_rate
-
-# Note: set_base_currency and save_rate were not implemented in my refactor step for settings/fx services yet.
-# I need to ensure they exist or mock them, but for now I will assume they are updated or used placeholders.
-# Wait, I only updated get_base_currency in settings_service.
-# And get_latest_rate in fx_service.
-# I missed set_base_currency and save_rate. I should add them quickly to avoid import errors.
-from core.services.settings_service import get_base_currency
-
-
-# Mocking write functions for now as they were missing in my previous step
-def set_base_currency(session: Session, currency: str):
-    # TODO: Implement persistence
-    pass
-
-
-def save_rate(session: Session, base: str, quote: str, rate: float):
-    # TODO: Implement persistence
-    pass
+from core.services.fx_service import get_latest_rate, save_rate
+from core.services.settings_service import get_base_currency, set_base_currency
 
 
 st.set_page_config(page_title="Settings", page_icon="⚙️", layout="wide")
@@ -61,6 +44,9 @@ with st.expander("💱 수동 환율 관리 (Manual FX Rates)", expanded=True):
         )
     with col2:
         current_rate = get_latest_rate(session, current_base, quote_cur)
+        if current_rate is None:
+            st.warning("등록된 환율이 없습니다. 값을 입력해 저장하세요.")
+            current_rate = 0.0
         new_rate = st.number_input(
             f"환율 ({current_base}/{quote_cur})",
             min_value=0.0,

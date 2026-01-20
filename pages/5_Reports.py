@@ -24,6 +24,11 @@ st.subheader("재무상태표(BS)")
 as_of = st.date_input("기준일", value=date.today())
 display_currency = st.session_state.get("display_currency", "KRW")
 bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
+if bs.get("missing_rates"):
+    missing_pairs = ", ".join(
+        f"{base}/{quote}" for base, quote in bs["missing_rates"]
+    )
+    st.warning(f"환율이 없어 일부 값은 장부 기준으로 표시됩니다: {missing_pairs}")
 curr_cfg = get_currency_config(display_currency)
 fmt_disp = get_pandas_style_fmt(display_currency)
 

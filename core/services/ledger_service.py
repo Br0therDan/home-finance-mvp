@@ -294,6 +294,7 @@ def balance_sheet(
     assets = []
     liabilities = []
     equity = []
+    missing_rates: set[tuple[str, str]] = set()
 
     for a in accounts:
         aid = int(a["id"])
@@ -309,13 +310,21 @@ def balance_sheet(
             current_val_base = base_val
         else:
             current_rate = get_latest_rate(session, base_cur, native_cur)
-            current_val_base = native_val * current_rate
+            if current_rate is None:
+                missing_rates.add((base_cur, native_cur))
+                current_val_base = base_val
+            else:
+                current_val_base = native_val * current_rate
 
         if quote_cur == base_cur:
             disp_val = current_val_base
         else:
             krw_quote_rate = get_latest_rate(session, base_cur, quote_cur)
-            disp_val = current_val_base / krw_quote_rate if krw_quote_rate != 0 else 0.0
+            if krw_quote_rate is None or krw_quote_rate == 0:
+                missing_rates.add((base_cur, quote_cur))
+                disp_val = current_val_base
+            else:
+                disp_val = current_val_base / krw_quote_rate
 
         item = {
             "id": aid,
@@ -363,6 +372,7 @@ def balance_sheet(
         "net_worth_disp": total_assets_disp - total_liab_disp,
         "display_currency": quote_cur,
         "base_currency": base_cur,
+        "missing_rates": sorted(missing_rates),
     }
 
 

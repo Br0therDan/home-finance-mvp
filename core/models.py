@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import Optional
 
 from pydantic import BaseModel
 from sqlmodel import Field, Relationship, SQLModel
@@ -7,6 +6,26 @@ from sqlmodel import Field, Relationship, SQLModel
 # ==========================================
 # Enums or Constants
 # ==========================================
+
+
+class AppSettings(SQLModel, table=True):
+    __tablename__ = "app_settings"
+    __table_args__ = {"extend_existing": True}
+
+    id: int | None = Field(default=None, primary_key=True)
+    base_currency: str = Field(default="KRW")
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
+class FxRate(SQLModel, table=True):
+    __tablename__ = "fx_rates"
+    __table_args__ = {"extend_existing": True}
+
+    id: int | None = Field(default=None, primary_key=True)
+    base_currency: str = Field(index=True)
+    quote_currency: str = Field(index=True)
+    rate: float
+    as_of: datetime = Field(default_factory=datetime.now, index=True)
 
 
 class Account(SQLModel, table=True):
