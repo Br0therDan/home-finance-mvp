@@ -18,7 +18,7 @@ A household finance & asset management MVP built with:
   - Transaction input (cashbook UX) → auto-generated journal entries (balanced)
   - Day0 Opening Balance input → auto-generated opening balance journal entry
   - Ledger browsing + trial balance
-  - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple)
+  - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple; cash-equivalent account name filter)
   - Asset register + valuation history
   - Settings: Chart of Accounts (CoA)
 

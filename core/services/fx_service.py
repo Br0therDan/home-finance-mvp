@@ -7,9 +7,7 @@ from sqlmodel import Session, select
 from core.models import FxRate
 
 
-def get_latest_rate(
-    session: Session, base_cur: str, target_cur: str
-) -> float | None:
+def get_latest_rate(session: Session, base_cur: str, target_cur: str) -> float | None:
     if base_cur == target_cur:
         return 1.0
 
