@@ -47,6 +47,9 @@
 - 손익계산서(IS) 및 현금흐름(Cashflow)은 기준 통화 설정을 따름
 - 수동 환율(Manual FX) 관리
 
+### 계정 그룹(가계 친화 분류)
+- 시스템(L1) 계정을 숨기고, 현금/은행/카드/투자/주거/차량/생활비/수입 등 **가정용 그룹**으로 묶어 표시
+
 ### Day0 기초 잔액 설정
 - 과거 거래를 복원하지 않고 **오늘 기준 스냅샷**을 1회 입력
 - `OPENING_BALANCE` 전표 1장만 생성
@@ -102,6 +105,7 @@ home-finance-mvp/
     db.py
     models.py
     services/
+      account_service.py
       ledger_service.py
       subscription_service.py
       asset_service.py

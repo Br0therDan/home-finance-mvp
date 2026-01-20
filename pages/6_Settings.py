@@ -2,6 +2,7 @@ import streamlit as st
 from sqlmodel import Session
 
 from core.db import engine
+from core.services.account_service import list_household_account_groups
 from core.services.fx_service import get_latest_rate, save_rate
 from core.services.settings_service import get_base_currency, set_base_currency
 
@@ -31,6 +32,31 @@ with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
             set_base_currency(session, new_base)
             st.success(f"기준 통화가 {new_base}로 변경되었습니다.")
             st.rerun()
+
+st.divider()
+
+# --- Household Account Groups Section ---
+with st.expander("🏠 계정 그룹 (Household View)", expanded=True):
+    st.caption(
+        "시스템(L1) 계정은 숨기고, 실제 사용 계정을 생활 친화 그룹으로 묶어 보여줍니다."
+    )
+    grouped_accounts = list_household_account_groups(session, active_only=True)
+    rows = []
+    for group in grouped_accounts:
+        for account in group["accounts"]:
+            rows.append(
+                {
+                    "그룹": group["label"],
+                    "계정": account["name"],
+                    "상위 분류": account.get("l1_name") or "-",
+                    "유형": account["type"],
+                    "통화": account["currency"],
+                }
+            )
+    if rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+    else:
+        st.info("표시할 계정이 없습니다. 계정을 먼저 추가하세요.")
 
 st.divider()
 

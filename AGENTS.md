@@ -72,13 +72,13 @@ A household finance & asset management MVP built with:
   - `3_Assets.py`
   - `4_Ledger.py`
   - `5_Reports.py`
-  - `6_Settings.py`
+  - `6_Settings.py` (settings + household-friendly account groups view)
 
 - `core/db.py`  
   SQLite connection helpers + migration runner.
 
 - `core/services/account_service.py`
-  CoA CRUD helpers + system/user account guardrails.
+  CoA CRUD helpers + system/user account guardrails + household grouping helpers.
 
 - `core/services/ledger_service.py`  
   Ledger write validation + balance checks + basic derived calculations.
