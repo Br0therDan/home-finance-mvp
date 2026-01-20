@@ -105,6 +105,7 @@ is_ = income_statement(session, start=start, end=end)
 # IS usually reports in Base Currency (KRW)
 base_currency = "KRW"
 base_cfg = get_currency_config(base_currency)
+fmt_base = get_pandas_style_fmt(base_currency)
 
 col1, col2, col3 = st.columns(3)
 col1.metric("총 수익", format_currency(is_["total_income"], base_currency))
