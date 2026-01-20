@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Optional
-from sqlmodel import Session, select, func
-from core.models import Account, JournalLine, Asset
+from sqlmodel import Session, func, select
+
+from core.models import Account, Asset, JournalLine
 
 
 def list_system_accounts_by_type(session: Session, type_: str) -> list[dict]:
@@ -61,10 +61,7 @@ def create_user_account(
     )
     max_id = session.exec(statement).one()
 
-    if max_id:
-        new_id = max_id + 1
-    else:
-        new_id = range_min
+    new_id = max_id + 1 if max_id else range_min
 
     if new_id > range_max:
         raise ValueError(

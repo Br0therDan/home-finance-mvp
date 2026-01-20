@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -8,6 +9,7 @@ from sqlmodel import Session, desc, select
 
 from core.db import engine
 from core.models import Account, JournalEntry, JournalLine
+from core.services.account_service import create_user_account
 from core.services.ledger_service import (
     create_opening_balance_entry,
     delete_opening_balance_entry,
@@ -16,9 +18,7 @@ from core.services.ledger_service import (
     list_accounts,
     list_posting_accounts,
 )
-from core.services.account_service import create_user_account
-import time
-from ui.utils import get_currency_config, get_pandas_style_fmt
+from ui.utils import get_currency_config
 
 st.set_page_config(page_title="Day0 Setup", page_icon="🧭", layout="wide")
 
@@ -34,7 +34,7 @@ def load_draft():
         return
 
     try:
-        with open(DRAFT_PATH, "r", encoding="utf-8") as f:
+        with open(DRAFT_PATH, encoding="utf-8") as f:
             data = json.load(f)
 
         st.session_state.asset_rows = data.get("asset_rows", 2)
@@ -106,13 +106,13 @@ st.title("Day0 기초 잔액 설정")
 
 if DRAFT_PATH.exists():
     try:
-        with open(DRAFT_PATH, "r", encoding="utf-8") as f:
+        with open(DRAFT_PATH, encoding="utf-8") as f:
             meta = json.load(f)
             ts = meta.get("timestamp", "")[:16].replace("T", " ")
         st.info(f"💾 임시 저장된 데이터가 있습니다. ({ts})")
         if st.button("임시 저장 불러오기"):
             load_draft()
-    except:
+    except Exception:
         pass
 
 st.caption(

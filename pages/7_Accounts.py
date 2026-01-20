@@ -1,22 +1,18 @@
 from __future__ import annotations
 
 import io
-import re
-import tomllib
-from pathlib import Path
-from typing import Literal
 
 import pandas as pd
 import streamlit as st
-from sqlmodel import Session, select, func
+from sqlmodel import Session, func, select
 
 from core.db import engine
+from core.models import Account
 from core.services.account_service import (
     create_user_account,
     delete_user_account,
     update_user_account,
 )
-from core.models import Account
 
 st.set_page_config(page_title="Accounts", page_icon="🗂️", layout="wide")
 
@@ -141,10 +137,6 @@ def _render_account_table(
 @st.dialog("계정 추가")
 def _dialog_create_child(type_: str, parent_id: int) -> None:
     st.caption("상위 계정은 시스템(Level 1) 집계 계정이어야 합니다.")
-
-    # Get Type from parent
-    parent = session.get(Account, parent_id)
-    default_type = parent.type if parent else type_
 
     with st.form("add_account_form"):
         name = st.text_input("계정명")
@@ -416,10 +408,7 @@ def _process_excel_impot(file):
                     )
                     max_id_db = session.exec(statement).one()
 
-                    if max_id_db:
-                        new_id = max_id_db + 1
-                    else:
-                        new_id = range_min
+                    new_id = max_id_db + 1 if max_id_db else range_min
 
                     # ALSO Check current session NEW objects to prevent collision in bulk insert
                     # (Simple approach: commit per row or scan new_objects. For now, we commit at end, so we might have collision if we don't increment local tracker.

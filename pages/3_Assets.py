@@ -24,7 +24,7 @@ from core.services.asset_transaction_service import dispose_asset, purchase_asse
 from core.services.ledger_service import account_balances, list_posting_accounts
 from core.services.settings_service import get_base_currency
 from core.services.valuation_service import ValuationService
-from ui.utils import get_currency_config, get_pandas_style_fmt
+from ui.utils import get_pandas_style_fmt
 
 NO_ACTION = "-"
 EDIT_ACTION = "✏️ 편집"
@@ -174,7 +174,7 @@ def _dialog_purchase_asset(asset_accounts: list, liab_accounts: list):
 
         is_int = curr_cfg["precision"] == 0
         safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
-        safe_val = int(0) if is_int else 0.0
+        safe_val = 0 if is_int else 0.0
 
         acq_cost = st.number_input(
             f"매입 금액 (Cost) - {sel_curr}",
@@ -329,7 +329,7 @@ def _dialog_edit_asset(asset: dict, asset_accounts: list):
         safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
         init_val = float(asset["취득가"])
         safe_val = int(init_val) if is_int else init_val
-        min_val = int(0) if is_int else 0.0
+        min_val = 0 if is_int else 0.0
 
         new_cost = st.number_input(
             f"취득가 ({sel_curr})",
@@ -405,7 +405,7 @@ def _dialog_dispose_asset(asset: dict, all_accounts: list):
         safe_step = int(curr_cfg["step"]) if is_int else float(curr_cfg["step"])
         init_val = float(asset["취득가"])
         safe_val = int(init_val) if is_int else init_val
-        min_val = int(0) if is_int else 0.0
+        min_val = 0 if is_int else 0.0
 
         sale_price = st.number_input(
             f"매각 금액(실수령액) - {curr}",
