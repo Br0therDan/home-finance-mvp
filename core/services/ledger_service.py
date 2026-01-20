@@ -1,8 +1,7 @@
 from __future__ import annotations
-
+import sqlite3
 from datetime import date
-
-from sqlmodel import Session, func, select
+from typing import List, Dict, Optional, Any
 
 from core.models import Account, JournalEntry, JournalEntryInput, JournalLine
 
@@ -28,16 +27,19 @@ def _validate_entry(lines: list[JournalLine]) -> None:
             raise ValueError("A line must have a debit or credit amount.")
 
 
-def _validate_posting_accounts(session: Session, lines: list[JournalLine]) -> None:
+def _validate_posting_accounts(
+    conn: sqlite3.Connection, lines: list[JournalLine]
+) -> None:
     account_ids = list({int(line.account_id) for line in lines})
     if not account_ids:
         raise ValueError("At least one journal line is required.")
 
-    statement = select(Account.id, Account.allow_posting).where(
-        Account.id.in_(account_ids)
-    )
-    rows = session.exec(statement).all()
-    allow_map = {r[0]: r[1] for r in rows}
+    placeholders = ",".join("?" for _ in account_ids)
+    rows = conn.execute(
+        f"SELECT id, allow_posting FROM accounts WHERE id IN ({placeholders})",
+        account_ids,
+    ).fetchall()
+    allow_map = {r["id"]: r["allow_posting"] for r in rows}
 
     for account_id in account_ids:
         if account_id not in allow_map:
@@ -48,96 +50,110 @@ def _validate_posting_accounts(session: Session, lines: list[JournalLine]) -> No
             )
 
 
-def create_journal_entry(session: Session, entry_in: JournalEntryInput) -> int:
+def create_journal_entry(conn: sqlite3.Connection, entry_in: JournalEntryInput) -> int:
     _validate_entry(entry_in.lines)
-    _validate_posting_accounts(session, entry_in.lines)
+    _validate_posting_accounts(conn, entry_in.lines)
 
     # Create Entry
-    db_entry = JournalEntry(
-        entry_date=entry_in.entry_date,
-        description=entry_in.description,
-        source=entry_in.source,
+    cursor = conn.execute(
+        "INSERT INTO journal_entries (entry_date, description, source) VALUES (?, ?, ?)",
+        (
+            (
+                entry_in.entry_date.isoformat()
+                if isinstance(entry_in.entry_date, date)
+                else entry_in.entry_date
+            ),
+            entry_in.description,
+            entry_in.source,
+        ),
     )
-    session.add(db_entry)
-    session.flush()  # Get ID
+    entry_id = cursor.lastrowid
 
     for line in entry_in.lines:
-        db_line = JournalLine(
-            entry_id=db_entry.id,
-            account_id=line.account_id,
-            debit=float(line.debit),
-            credit=float(line.credit),
-            memo=line.memo,
-            native_amount=line.native_amount,
-            native_currency=line.native_currency,
-            fx_rate=line.fx_rate,
+        conn.execute(
+            """INSERT INTO journal_lines (entry_id, account_id, debit, credit, memo, native_amount, native_currency, fx_rate)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry_id,
+                line.account_id,
+                float(line.debit),
+                float(line.credit),
+                line.memo,
+                line.native_amount,
+                line.native_currency,
+                line.fx_rate,
+            ),
         )
-        session.add(db_line)
 
-    session.commit()
-    session.refresh(db_entry)
-    return db_entry.id
+    return entry_id
 
 
-def list_accounts(session: Session, active_only: bool = True) -> list[dict]:
-    statement = select(Account)
+def list_accounts(conn: sqlite3.Connection, active_only: bool = True) -> list[dict]:
+    query = "SELECT * FROM accounts"
     if active_only:
-        statement = statement.where(Account.is_active)
-    statement = statement.order_by(Account.type, Account.name)
+        query += " WHERE is_active = 1"
+    query += " ORDER BY type, name"
 
-    results = session.exec(statement).all()
-    # Return dicts
-    return [r.model_dump() for r in results]
+    rows = conn.execute(query).fetchall()
+    return [dict(r) for r in rows]
 
 
-def list_posting_accounts(session: Session, active_only: bool = True) -> list[dict]:
-    statement = select(Account).where(Account.allow_posting)
+def list_posting_accounts(
+    conn: sqlite3.Connection, active_only: bool = True
+) -> list[dict]:
+    query = "SELECT * FROM accounts WHERE allow_posting = 1"
     if active_only:
-        statement = statement.where(Account.is_active)
-    statement = statement.order_by(Account.type, Account.name)
+        query += " AND is_active = 1"
+    query += " ORDER BY type, name"
 
-    results = session.exec(statement).all()
-    return [r.model_dump() for r in results]
-
-
-def get_account(session: Session, account_id: int):
-    acc = session.get(Account, account_id)
-    return acc.model_dump() if acc else None
+    rows = conn.execute(query).fetchall()
+    return [dict(r) for r in rows]
 
 
-def get_account_by_name(session: Session, name: str, type_: str | None = None):
-    statement = select(Account).where(Account.name == name)
+def get_account(conn: sqlite3.Connection, account_id: int) -> Optional[dict]:
+    row = conn.execute("SELECT * FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_account_by_name(
+    conn: sqlite3.Connection, name: str, type_: str | None = None
+) -> Optional[dict]:
+    query = "SELECT * FROM accounts WHERE name = ?"
+    params = [name]
     if type_:
-        statement = statement.where(Account.type == type_)
+        query += " AND type = ?"
+        params.append(type_)
 
-    acc = session.exec(statement).first()
-    return acc.model_dump() if acc else None
-
-
-def has_opening_balance_entry(session: Session) -> bool:
-    statement = select(func.count(JournalEntry.id)).where(
-        JournalEntry.source == "opening_balance"
-    )
-    cnt = session.exec(statement).one()
-    return cnt > 0
+    row = conn.execute(query, params).fetchone()
+    return dict(row) if row else None
 
 
-def delete_opening_balance_entry(session: Session) -> None:
-    statement = select(JournalEntry).where(JournalEntry.source == "opening_balance")
-    entries = session.exec(statement).all()
-    for e in entries:
-        session.delete(e)
-    session.commit()
+def has_opening_balance_entry(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT COUNT(id) FROM journal_entries WHERE source = 'opening_balance'"
+    ).fetchone()
+    return row[0] > 0
+
+
+def delete_opening_balance_entry(conn: sqlite3.Connection) -> None:
+    # Get entry IDs
+    rows = conn.execute(
+        "SELECT id FROM journal_entries WHERE source = 'opening_balance'"
+    ).fetchall()
+    for r in rows:
+        # Journal lines are deleted via ON DELETE CASCADE if supported, but let's be explicit if needed
+        # Actually our schema.sql has ON DELETE CASCADE for journal_lines
+        conn.execute("DELETE FROM journal_entries WHERE id = ?", (r["id"],))
 
 
 def create_opening_balance_entry(
-    session: Session,
+    conn: sqlite3.Connection,
     entry_date: date,
     description: str,
     asset_lines: list[JournalLine],
     liability_lines: list[JournalLine],
 ) -> int:
-    if has_opening_balance_entry(session):
+    if has_opening_balance_entry(conn):
         raise ValueError("OPENING_BALANCE entry already exists.")
 
     lines: list[JournalLine] = []
@@ -174,11 +190,11 @@ def create_opening_balance_entry(
     total_debit = sum(line.debit for line in lines)
     total_credit = sum(line.credit for line in lines)
 
-    equity = get_account_by_name(session, "기초순자산(Opening Equity)", "EQUITY")
+    equity = get_account_by_name(conn, "기초순자산(Opening Equity)", "EQUITY")
     if equity is None:
-        equity = get_account_by_name(session, "기초순자산", "EQUITY")
+        equity = get_account_by_name(conn, "기초순자산", "EQUITY")
     if equity is None:
-        equity = get_account_by_name(session, "기초자본(Opening Balance)", "EQUITY")
+        equity = get_account_by_name(conn, "기초자본(Opening Balance)", "EQUITY")
     if equity is None:
         raise ValueError("Opening equity account not found.")
 
@@ -203,30 +219,36 @@ def create_opening_balance_entry(
         source="opening_balance",
         lines=lines,
     )
-    return create_journal_entry(session, entry_input)
+    return create_journal_entry(conn, entry_input)
 
 
-def account_balances(session: Session, as_of: date | None = None) -> dict[int, float]:
-    statement = select(
-        JournalLine.account_id,
-        func.sum(JournalLine.debit - JournalLine.credit).label("balance"),
-    ).join(JournalEntry)
+def account_balances(
+    conn: sqlite3.Connection, as_of: date | None = None
+) -> dict[int, float]:
+    query = """
+        SELECT jl.account_id, SUM(jl.debit - jl.credit) AS balance
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+    """
+    params = []
     if as_of:
-        statement = statement.where(JournalEntry.entry_date <= as_of)
-    statement = statement.group_by(JournalLine.account_id)
+        query += " WHERE je.entry_date <= ?"
+        params.append(as_of.isoformat() if isinstance(as_of, date) else as_of)
 
-    rows = session.exec(statement).all()
-    return {r[0]: (r[1] or 0.0) for r in rows}
+    query += " GROUP BY jl.account_id"
+
+    rows = conn.execute(query, params).fetchall()
+    return {r["account_id"]: (r["balance"] or 0.0) for r in rows}
 
 
 def account_balances_multi(
-    session: Session, as_of: date | None = None
+    conn: sqlite3.Connection, as_of: date | None = None
 ) -> dict[int, dict[str, float]]:
     where_clause = ""
-    params = {}
+    params = []
     if as_of:
-        where_clause = "WHERE je.entry_date <= :as_of"
-        params = {"as_of": as_of}
+        where_clause = "WHERE je.entry_date <= ?"
+        params.append(as_of.isoformat() if isinstance(as_of, date) else as_of)
 
     sql = f"""
         SELECT 
@@ -246,18 +268,20 @@ def account_balances_multi(
         GROUP BY jl.account_id
     """
 
-    from sqlalchemy import text
-
-    result = session.exec(text(sql), params=params).fetchall()
+    rows = conn.execute(sql, params).fetchall()
 
     return {
-        r[0]: {"base": float(r[1] or 0.0), "native": float(r[2] or 0.0)} for r in result
+        r["account_id"]: {
+            "base": float(r["base_balance"] or 0.0),
+            "native": float(r["native_balance"] or 0.0),
+        }
+        for r in rows
     }
 
 
-def trial_balance(session: Session, as_of: date | None = None):
-    bal = account_balances(session, as_of=as_of)
-    accounts = list_accounts(session, active_only=False)  # list of dicts
+def trial_balance(conn: sqlite3.Connection, as_of: date | None = None):
+    bal = account_balances(conn, as_of=as_of)
+    accounts = list_accounts(conn, active_only=False)  # list of dicts
 
     results = []
     for a in accounts:
@@ -276,18 +300,18 @@ def trial_balance(session: Session, as_of: date | None = None):
 
 
 def balance_sheet(
-    session: Session,
+    conn: sqlite3.Connection,
     as_of: date | None = None,
     display_currency: str | None = None,
 ):
     from core.services.fx_service import get_latest_rate
     from core.services.settings_service import get_base_currency
 
-    base_cur = get_base_currency(session)
+    base_cur = get_base_currency(conn)
     quote_cur = display_currency or base_cur
 
-    bal_multi = account_balances_multi(session, as_of=as_of)
-    accounts = list_accounts(session, active_only=True)
+    bal_multi = account_balances_multi(conn, as_of=as_of)
+    accounts = list_accounts(conn, active_only=True)
 
     acc_currencies = {
         int(a["id"]): a.get("currency", base_cur) or base_cur for a in accounts
@@ -311,7 +335,7 @@ def balance_sheet(
         if native_cur == base_cur:
             current_val_base = base_val
         else:
-            current_rate = get_latest_rate(session, base_cur, native_cur)
+            current_rate = get_latest_rate(conn, base_cur, native_cur)
             if current_rate is None:
                 missing_rates.add((base_cur, native_cur))
                 current_val_base = base_val
@@ -321,7 +345,7 @@ def balance_sheet(
         if quote_cur == base_cur:
             disp_val = current_val_base
         else:
-            krw_quote_rate = get_latest_rate(session, base_cur, quote_cur)
+            krw_quote_rate = get_latest_rate(conn, base_cur, quote_cur)
             if krw_quote_rate is None or krw_quote_rate == 0:
                 missing_rates.add((base_cur, quote_cur))
                 disp_val = current_val_base
@@ -378,28 +402,32 @@ def balance_sheet(
     }
 
 
-def income_statement(session: Session, start: date, end: date):
-    from sqlalchemy import text
-
+def income_statement(conn: sqlite3.Connection, start: date, end: date):
     sql = """
         SELECT a.type AS type, a.name AS account,
                SUM(jl.debit - jl.credit) AS raw_balance
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.entry_id
         JOIN accounts a ON a.id = jl.account_id
-        WHERE je.entry_date >= :start AND je.entry_date <= :end
+        WHERE je.entry_date >= ? AND je.entry_date <= ?
           AND a.type IN ('INCOME', 'EXPENSE')
         GROUP BY a.type, a.name
         ORDER BY a.type, a.name
     """
-    rows = session.exec(text(sql), params={"start": start, "end": end}).fetchall()
+    rows = conn.execute(
+        sql,
+        (
+            start.isoformat() if isinstance(start, date) else start,
+            end.isoformat() if isinstance(end, date) else end,
+        ),
+    ).fetchall()
 
     income = []
     expense = []
     for r in rows:
-        t = r[0]
-        name = r[1]
-        b = float(r[2] or 0.0)
+        t = r["type"]
+        name = r["account"]
+        b = float(r["raw_balance"] or 0.0)
         if t == "INCOME":
             income.append((name, -b))
         else:
@@ -416,10 +444,8 @@ def income_statement(session: Session, start: date, end: date):
     }
 
 
-def monthly_cashflow(session: Session, year: int):
+def monthly_cashflow(conn: sqlite3.Connection, year: int):
     """Return monthly cashflow for cash-equivalent accounts."""
-    from sqlalchemy import text
-
     cash_name_patterns = [
         "%현금%",
         "%보통예금%",
@@ -429,57 +455,51 @@ def monthly_cashflow(session: Session, year: int):
         "%savings%",
     ]
     name_clauses = " OR ".join(
-        f"LOWER(a.name) LIKE LOWER(:name_{idx})"
-        for idx in range(len(cash_name_patterns))
-    )
-    params = {f"name_{idx}": pattern for idx, pattern in enumerate(cash_name_patterns)}
-    params.update(
-        {
-            "start": f"{year}-01-01",
-            "end": f"{year}-12-31",
-        }
+        f"LOWER(a.name) LIKE LOWER(?)" for _ in range(len(cash_name_patterns))
     )
 
-    base_sql = f"""
+    start_date = f"{year}-01-01"
+    end_date = f"{year}-12-31"
+
+    base_params = list(cash_name_patterns)
+
+    opening_sql = f"""
         WITH cash_accounts AS (
             SELECT a.id
             FROM accounts a
             WHERE a.is_active = 1
               AND ({name_clauses})
         )
-    """
-
-    opening_sql = (
-        base_sql
-        + """
         SELECT COALESCE(SUM(jl.debit - jl.credit), 0) AS opening_balance
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.entry_id
         WHERE jl.account_id IN (SELECT id FROM cash_accounts)
-          AND je.entry_date < :start
-        """
-    )
+          AND je.entry_date < ?
+    """
 
-    monthly_sql = (
-        base_sql
-        + """
+    monthly_sql = f"""
+        WITH cash_accounts AS (
+            SELECT a.id
+            FROM accounts a
+            WHERE a.is_active = 1
+              AND ({name_clauses})
+        )
         SELECT strftime('%m', je.entry_date) AS month,
                SUM(jl.debit - jl.credit) AS net_change
         FROM journal_lines jl
         JOIN journal_entries je ON je.id = jl.entry_id
         WHERE jl.account_id IN (SELECT id FROM cash_accounts)
-          AND je.entry_date >= :start
-          AND je.entry_date <= :end
+          AND je.entry_date >= ?
+          AND je.entry_date <= ?
         GROUP BY strftime('%m', je.entry_date)
         ORDER BY strftime('%m', je.entry_date)
-        """
-    )
+    """
 
     opening_balance = float(
-        session.exec(text(opening_sql), params=params).one()[0] or 0.0
+        conn.execute(opening_sql, base_params + [start_date]).fetchone()[0] or 0.0
     )
-    rows = session.exec(text(monthly_sql), params=params).fetchall()
-    monthly_map = {int(r[0]): float(r[1] or 0.0) for r in rows}
+    rows = conn.execute(monthly_sql, base_params + [start_date, end_date]).fetchall()
+    monthly_map = {int(r["month"]): float(r["net_change"] or 0.0) for r in rows}
 
     results = []
     running_balance = opening_balance

@@ -1,12 +1,10 @@
 import streamlit as st
-from sqlmodel import Session
-
-from core.db import engine, run_migrations
+from core.db import init_db, Session
 
 
 def main():
-    # Run migrations on startup
-    run_migrations()
+    # Run DB initialization on startup
+    init_db()
 
     st.set_page_config(
         page_title="Home Finance MVP",
@@ -14,18 +12,17 @@ def main():
         layout="wide",
     )
 
-    # DB Session
-    # In a full web app, we'd use a dependency injection or context middleware.
-    # In Streamlit, we can just create a session.
-    session = Session(engine)
+    # DB Connection wrapper
+    session_obj = Session()
+    conn = session_obj.conn
 
     st.title("Home Finance MVP")
-    st.caption("Streamlit + SQLite 기반 가정용 자산/기장 관리 MVP")
+    st.caption("SQLite 기반 가정용 자산/기장 관리 MVP (Pure SQL Core)")
 
     # Sidebar: Display Currency Settings
     from core.services.settings_service import get_base_currency
 
-    base_cur = get_base_currency(session)
+    base_cur = get_base_currency(conn)
 
     st.sidebar.header("표시 통화 설정")
     display_currency = st.sidebar.selectbox(
@@ -54,9 +51,7 @@ def main():
         """
     )
 
-    st.info(
-        "첫 실행 시 data/app.db 가 자동 생성되고 migrations/*.sql 이 순서대로 적용된다."
-    )
+    st.info("첫 실행 시 data/app.db 가 자동 생성되고 core/schema.sql 이 적용된다.")
 
 
 if __name__ == "__main__":

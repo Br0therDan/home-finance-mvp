@@ -1,63 +1,51 @@
 from __future__ import annotations
-
+import sqlite3
 from datetime import datetime
-
-from sqlmodel import Session, select
-
-from core.models import FxRate
+from typing import Optional
 
 
-def get_latest_rate(session: Session, base_cur: str, target_cur: str) -> float | None:
+def get_latest_rate(
+    conn: sqlite3.Connection, base_cur: str, target_cur: str
+) -> float | None:
     if base_cur == target_cur:
         return 1.0
 
-    statement = (
-        select(FxRate)
-        .where(
-            FxRate.base_currency == base_cur,
-            FxRate.quote_currency == target_cur,
-        )
-        .order_by(FxRate.as_of.desc(), FxRate.id.desc())
-    )
-    rate_row = session.exec(statement).first()
-    return rate_row.rate if rate_row else None
+    row = conn.execute(
+        "SELECT rate FROM fx_rates WHERE base_currency = ? AND quote_currency = ? ORDER BY as_of DESC, id DESC LIMIT 1",
+        (base_cur, target_cur),
+    ).fetchone()
+    return float(row["rate"]) if row else None
 
 
 def save_rate(
-    session: Session,
+    conn: sqlite3.Connection,
     base: str,
     quote: str,
     rate: float,
     as_of: datetime | None = None,
-) -> FxRate:
+) -> None:
     timestamp = as_of or datetime.now()
+    timestamp_str = (
+        timestamp.isoformat() if isinstance(timestamp, datetime) else timestamp
+    )
 
+    # Check if exists
     if as_of is None:
-        statement = (
-            select(FxRate)
-            .where(FxRate.base_currency == base, FxRate.quote_currency == quote)
-            .order_by(FxRate.as_of.desc(), FxRate.id.desc())
+        query = "SELECT id FROM fx_rates WHERE base_currency = ? AND quote_currency = ? ORDER BY as_of DESC, id DESC LIMIT 1"
+        params = (base, quote)
+    else:
+        query = "SELECT id FROM fx_rates WHERE base_currency = ? AND quote_currency = ? AND as_of = ?"
+        params = (base, quote, timestamp_str)
+
+    row = conn.execute(query, params).fetchone()
+
+    if row:
+        conn.execute(
+            "UPDATE fx_rates SET rate = ?, as_of = ? WHERE id = ?",
+            (rate, timestamp_str, row["id"]),
         )
     else:
-        statement = select(FxRate).where(
-            FxRate.base_currency == base,
-            FxRate.quote_currency == quote,
-            FxRate.as_of == timestamp,
+        conn.execute(
+            "INSERT INTO fx_rates (base_currency, quote_currency, rate, as_of) VALUES (?, ?, ?, ?)",
+            (base, quote, rate, timestamp_str),
         )
-
-    rate_row = session.exec(statement).first()
-    if rate_row:
-        rate_row.rate = rate
-        rate_row.as_of = timestamp
-    else:
-        rate_row = FxRate(
-            base_currency=base,
-            quote_currency=quote,
-            rate=rate,
-            as_of=timestamp,
-        )
-        session.add(rate_row)
-
-    session.commit()
-    session.refresh(rate_row)
-    return rate_row

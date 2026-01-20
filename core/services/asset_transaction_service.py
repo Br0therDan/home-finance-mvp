@@ -1,19 +1,15 @@
 from __future__ import annotations
-
+import sqlite3
 from datetime import date
-
-from sqlmodel import Session
+from typing import List, Dict, Optional
 
 from core.models import JournalEntryInput, JournalLine
 from core.services.asset_service import create_asset
 from core.services.ledger_service import create_journal_entry
 
-# Note: The original signature expected 'conn: sqlite3.Connection'.
-# We update it to 'session: Session'.
-
 
 def purchase_asset(
-    session: Session,
+    conn: sqlite3.Connection,
     name: str,
     asset_class: str,
     asset_sub_account_id: int,
@@ -24,7 +20,7 @@ def purchase_asset(
 ) -> int:
     # 1. Create Asset
     asset_id = create_asset(
-        session,
+        conn,
         name=name,
         asset_class=asset_class,
         linked_account_id=asset_sub_account_id,
@@ -55,13 +51,13 @@ def purchase_asset(
         source="system:asset_purchase",
         lines=lines,
     )
-    create_journal_entry(session, entry)
+    create_journal_entry(conn, entry)
 
     return asset_id
 
 
 def dispose_asset(
-    session: Session,
+    conn: sqlite3.Connection,
     asset_id: int,
     asset_name: str,
     linked_account_id: int,
@@ -71,18 +67,18 @@ def dispose_asset(
     gain_loss_account_id: int,
     book_value: float,
 ) -> None:
-    # 1. Update Asset (disposal_date) -> Need to fetch existing fields to satisfy update_asset signature
-    # Or simpler: access DB directly here or use update_asset if we have all fields.
-    # Let's use direct update via model since we are in refactor mode.
-    from core.models import Asset
-
-    asset = session.get(Asset, asset_id)
-    if not asset:
-        raise ValueError("Asset not found")
-
-    asset.disposal_date = disposal_date
-    session.add(asset)
-    session.flush()  # Keep transaction open
+    # 1. Update Asset (disposal_date)
+    conn.execute(
+        "UPDATE assets SET disposal_date = ? WHERE id = ?",
+        (
+            (
+                disposal_date.isoformat()
+                if isinstance(disposal_date, date)
+                else disposal_date
+            ),
+            asset_id,
+        ),
+    )
 
     # 2. Calculate Gain/Loss
     gain_loss = sale_price - book_value
@@ -131,5 +127,4 @@ def dispose_asset(
         source="system:asset_disposal",
         lines=lines,
     )
-    create_journal_entry(session, entry)
-    session.commit()
+    create_journal_entry(conn, entry)

@@ -4,7 +4,14 @@ trigger: always_on
 
 # Agent Instructions (home-finance-mvp)
 
-This document is a **task contract** for GitHub Copilot (or any coding agent) to work on this repository safely and consistently.
+This document is a **task contract** to work on this repository safely and consistently.
+
+## Instructions
+
+- **When any changes are made to the code, and :**  
+  1. update the README.md and AGENTS.md files to reflect the changes.
+  2. verify the code works as expected by running pytest.
+  3. during in any tasks, if you find any missing test cases, add them. and increase the coverage over 70%.
 
 ## Project Summary
 
@@ -17,7 +24,9 @@ A household finance & asset management MVP built with:
   - Transaction input (cashbook UX) → auto-generated journal entries (balanced)
   - Day0 Opening Balance input → auto-generated opening balance journal entry
   - Ledger browsing + trial balance
-  - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple)
+  - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple; cash-equivalent account name filter)
+  - IS/Cashflow reports follow the configured base currency (default KRW)
+  - Recurring schedule (subscriptions) + cashflow projections + optional auto-journals
   - Asset register + valuation history
   - Settings: Chart of Accounts (CoA)
 
@@ -67,13 +76,13 @@ A household finance & asset management MVP built with:
   - `3_Assets.py`
   - `4_Ledger.py`
   - `5_Reports.py`
-  - `6_Settings.py`
+  - `6_Settings.py` (settings + household-friendly account groups view)
 
 - `core/db.py`  
   SQLite connection helpers + migration runner.
 
 - `core/services/account_service.py`
-  CoA CRUD helpers + system/user account guardrails.
+  CoA CRUD helpers + system/user account guardrails + household grouping helpers.
 
 - `core/services/ledger_service.py`  
   Ledger write validation + balance checks + basic derived calculations.
@@ -86,6 +95,8 @@ A household finance & asset management MVP built with:
 
 - `migrations/`  
   Ordered SQL migrations and seeds.
+- `REDESIGN_FOR_UX_ENHANCEMENT.md`
+  UX 리디자인 목표와 데이터 모델 변경 계획 문서.
 
 ---
 
@@ -130,10 +141,30 @@ After *any* code changes:
 **assets**
 - id, name, asset_class, linked_account_id, acquisition_date, acquisition_cost, disposal_date, note
 
-**valuations**
-- id, asset_id, date, value, method
+**asset_valuations**
+- id, asset_id, as_of_date, value_native, currency, method, fx_rate
+
+**investment_profiles**
+- id, asset_id, ticker, exchange, trading_currency, security_type, isin, broker
+
+**investment_lots**
+- id, asset_id, lot_date, quantity, remaining_quantity, unit_price_native, fees_native, currency, fx_rate
+
+**investment_events**
+- id, asset_id, event_type, event_date, quantity, price_per_unit_native, gross_amount_native
+- fees_native, currency, fx_rate, cash_account_id, income_account_id, fee_account_id, journal_entry_id
+
+**subscriptions**
+- id, name, cadence, interval, next_due_date, amount
+- debit_account_id, credit_account_id, memo, is_active, auto_create_journal, last_run_date
 
 ---
+
+## Asset Valuation ↔ Ledger Mapping Rule
+
+- Each asset (`assets`) maps to exactly one ledger account via `linked_account_id`.
+- `asset_valuations` are informational snapshots and **must not** generate journal entries.
+- The dashboard reconciles valuation totals against the linked asset account balances to surface discrepancies.
 
 ## How to Add Features Safely
 

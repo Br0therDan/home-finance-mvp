@@ -24,6 +24,7 @@ from core.services.asset_transaction_service import dispose_asset, purchase_asse
 from core.services.ledger_service import account_balances, list_posting_accounts
 from core.services.settings_service import get_base_currency
 from core.services.valuation_service import ValuationService
+from core.models import AssetType, DepreciationMethod
 from ui.utils import get_pandas_style_fmt
 
 NO_ACTION = "-"
@@ -90,6 +91,14 @@ with st.container():
     with c2:
         if st.button("➕ 자산 매입 (Purchase)", type="primary"):
             st.session_state["show_purchase_dialog"] = True
+        if st.button("📈 시장가 업데이트 (Alpha Vantage)"):
+            try:
+                val_service = ValuationService(session)
+                results = val_service.update_market_valuations()
+                st.success(f"{len(results)}개 자산의 시장가가 업데이트되었습니다.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"시장가 업데이트 실패: {e}")
 
 # ========== UI: Reconciliation Dashboard ==========
 if has_mismatch:
@@ -121,26 +130,22 @@ if "show_purchase_dialog" not in st.session_state:
     st.session_state["show_purchase_dialog"] = False
 
 
-@st.dialog("자산 매입 (Purchase Asset)")
+@st.dialog("자산 매입 (Purchase Asset)", width="medium")
 def _dialog_purchase_asset(asset_accounts: list, liab_accounts: list):
     st.caption("자산 등록과 동시에 매입 분개(Ledger)를 자동 생성합니다.")
 
     with st.form("purchase_form"):
         name = st.text_input("자산명", value="")
-        asset_class = st.selectbox(
-            "자산 분류",
+        asset_type = st.selectbox(
+            "자산 유형",
             [
-                "CASH",
-                "BANK",
-                "STOCK",
-                "CRYPTO",
-                "REAL_ESTATE",
-                "VEHICLE",
-                "EQUIPMENT",
-                "INTANGIBLE",
-                "OTHER",
+                AssetType.SECURITY,
+                AssetType.REAL_ESTATE,
+                AssetType.VEHICLE,
+                AssetType.OTHER,
             ],
         )
+        asset_class = st.text_input("상세 분류 (예: 삼성전자, 아파트 등)", value="")
         linked = st.selectbox(
             "자산 계정 (Linked Account)",
             options=asset_accounts,
@@ -183,6 +188,32 @@ def _dialog_purchase_asset(asset_accounts: list, liab_accounts: list):
             step=safe_step,
             format=curr_cfg["format"],
         )
+
+        st.subheader("감가상각 설정")
+        dep_method = st.selectbox(
+            "감가상각 방법",
+            [
+                DepreciationMethod.NONE,
+                DepreciationMethod.STRAIGHT_LINE,
+                DepreciationMethod.DECLINING_BALANCE,
+            ],
+        )
+        useful_life = (
+            st.number_input("내용연수 (년)", min_value=1, value=5)
+            if dep_method != DepreciationMethod.NONE
+            else None
+        )
+        salvage = (
+            st.number_input("잔존가치", min_value=0.0, value=0.0)
+            if dep_method != DepreciationMethod.NONE
+            else 0.0
+        )
+
+        st.subheader("증빙 자료")
+        evidence_file = st.file_uploader(
+            "계약서 등 첨부 (./data/evidences/)", type=["pdf", "jpg", "png"]
+        )
+
         note = st.text_area("메모", value="")
 
         if st.form_submit_button("매입 확정"):
@@ -202,6 +233,25 @@ def _dialog_purchase_asset(asset_accounts: list, liab_accounts: list):
                         acquisition_cost=acq_cost,
                         note=note,
                     )
+                    # Handle Evidence if any
+                    if evidence_file and aid:
+                        import os
+                        from core.models import Evidence
+
+                        ext = os.path.splitext(evidence_file.name)[1]
+                        file_name = f"asset_{aid}_{acq_date.isoformat()}{ext}"
+                        save_path = os.path.join("data/evidences", file_name)
+                        with open(save_path, "wb") as f:
+                            f.write(evidence_file.getbuffer())
+
+                        ev = Evidence(
+                            asset_id=aid,
+                            file_path=save_path,
+                            original_filename=evidence_file.name,
+                        )
+                        session.add(ev)
+                        session.commit()
+
                     st.success(f"매입 완료: 자산 #{aid} 등록 및 전표 생성됨.")
                     st.session_state["show_purchase_dialog"] = False
                     st.rerun()

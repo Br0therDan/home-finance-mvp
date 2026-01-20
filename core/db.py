@@ -1,47 +1,54 @@
+import sqlite3
 from pathlib import Path
-
-from sqlmodel import Session, SQLModel, create_engine
 
 # DB Path Configuration
 BASE_DIR = Path(__file__).parent.parent
 DB_PATH = BASE_DIR / "data" / "app.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
-
-# Engine with Echo for debugging (optional)
-engine = create_engine(DATABASE_URL, echo=False)
+SCHEMA_PATH = BASE_DIR / "core" / "schema.sql"
 
 
-def get_session():
-    """Dependency for getting a SQLModel Session."""
-    with Session(engine) as session:
-        yield session
+def get_connection():
+    """Return a raw sqlite3 connection with dict factory."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    # Enable foreign keys
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+class Session:
+    """A minimal wrapper to maintain 'with Session(engine) as session' usage,
+    but adapting it to raw connection for less refactoring in business logic."""
+
+    def __init__(self, engine=None):
+        self.conn = get_connection()
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is None:
+            self.conn.commit()
+        else:
+            self.conn.rollback()
+        self.conn.close()
+
+    @staticmethod
+    def exec(conn, statement):
+        # Placeholder to help with refactoring transition
+        pass
+
+
+# Global engine placeholder for compatibility
+engine = None
 
 
 def init_db():
-    """Create tables (useful for dev/testing, but Alembic is preferred)."""
-    SQLModel.metadata.create_all(engine)
+    """Initialize the database using the schema.sql file."""
+    if not DB_PATH.parent.exists():
+        DB_PATH.parent.mkdir(parents=True)
 
-
-def run_migrations():
-    """Run Alembic migrations programmatically."""
-    from alembic.config import Config
-
-    from alembic import command
-
-    alembic_ini = BASE_DIR / "alembic.ini"
-    if not alembic_ini.exists():
-        print(f"Warning: alembic.ini not found at {alembic_ini}")
-        return
-
-    # Alembic Config object needs the absolute path to alembic.ini
-    alembic_cfg = Config(str(alembic_ini))
-    # We also need to set the script location relative to the ini location or absolute
-    # In alembic.ini it says script_location = %(here)s/alembic
-    # Setting the config main option 'script_location' to absolute path helps
-    alembic_cfg.set_main_option("script_location", str(BASE_DIR / "alembic"))
-
-    # We also need to set sqlalchemy.url to ensure it uses the correct DB path
-    # even if CWD is different (though usually CWD is root)
-    alembic_cfg.set_main_option("sqlalchemy.url", str(DATABASE_URL))
-
-    command.upgrade(alembic_cfg, "head")
+    with get_connection() as conn:
+        with open(SCHEMA_PATH, "r", encoding="utf-8") as f:
+            schema_sql = f.read()
+        conn.executescript(schema_sql)

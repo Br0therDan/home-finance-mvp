@@ -4,7 +4,12 @@ from sqlmodel import Session
 from core.db import engine
 from core.services.account_service import list_household_account_groups
 from core.services.fx_service import get_latest_rate, save_rate
-from core.services.settings_service import get_base_currency, set_base_currency
+from core.services.settings_service import (
+    get_base_currency,
+    set_base_currency,
+    get_av_api_key,
+    set_av_api_key,
+)
 
 st.set_page_config(page_title="Settings", page_icon="⚙️", layout="wide")
 
@@ -31,6 +36,20 @@ with st.expander("🌐 전역 설정 (Global Settings)", expanded=True):
         if st.button("기준 통화 업데이트"):
             set_base_currency(session, new_base)
             st.success(f"기준 통화가 {new_base}로 변경되었습니다.")
+            st.rerun()
+
+    st.markdown("---")
+    current_key = get_av_api_key(session) or ""
+    new_key = st.text_input(
+        "Alpha Vantage API Key",
+        value=current_key,
+        type="password",
+        help="주식 시장가 실시간 업데이트를 위해 필요합니다.",
+    )
+    if new_key != current_key:
+        if st.button("API 키 저장"):
+            set_av_api_key(session, new_key)
+            st.success("API 키가 저장되었습니다.")
             st.rerun()
 
 st.divider()
