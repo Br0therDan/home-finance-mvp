@@ -110,6 +110,12 @@ home-finance-mvp/
 
 ---
 
+## 4.1) UX 리디자인 참고 문서
+
+- `REDESIGN_FOR_UX_ENHANCEMENT.md`: 가정용 자산 관리 중심 UX 목표와 데이터 모델 확장 계획을 정리한 문서
+
+---
+
 ## 5) 데이터 모델(요약)
 
 ### accounts (계정과목)

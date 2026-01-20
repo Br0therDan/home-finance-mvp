@@ -88,6 +88,8 @@ A household finance & asset management MVP built with:
 
 - `migrations/`  
   Ordered SQL migrations and seeds.
+- `REDESIGN_FOR_UX_ENHANCEMENT.md`
+  UX 리디자인 목표와 데이터 모델 변경 계획 문서.
 
 ---
 
