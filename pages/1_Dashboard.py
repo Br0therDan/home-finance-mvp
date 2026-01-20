@@ -7,7 +7,10 @@ import streamlit as st
 from sqlmodel import Session
 
 from core.db import engine
-from core.services.asset_service import list_assets
+from core.services.asset_service import (
+    list_assets,
+    reconcile_asset_valuations_with_ledger,
+)
 from core.services.fx_service import get_latest_rate
 from core.services.ledger_service import balance_sheet, income_statement
 from core.services.valuation_service import ValuationService
@@ -27,6 +30,9 @@ bs = balance_sheet(session, as_of=as_of, display_currency=display_currency)
 if bs.get("missing_rates"):
     missing_pairs = ", ".join(f"{base}/{quote}" for base, quote in bs["missing_rates"])
     st.warning(f"환율이 없어 일부 값은 장부 기준으로 표시됩니다: {missing_pairs}")
+
+base_cur = bs.get("base_currency", "KRW")
+fmt_base = get_pandas_style_fmt(base_cur)
 
 # --- Valuation Calculation ---
 val_service = ValuationService(session)
@@ -70,6 +76,9 @@ valuation_disp_total = valuation_base_total * (
     else 1.0
 )
 unrealized_pnl_base = valuation_base_total - total_book_value_base
+reconciliation = reconcile_asset_valuations_with_ledger(session, as_of=as_of)
+recon_items = reconciliation["items"]
+has_recon_delta = any(abs(item["delta_base"]) > 1e-6 for item in recon_items)
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric(
@@ -96,7 +105,6 @@ col4.metric(
 
 with st.expander("🔍 장부 vs 평가 상세 (KRW 기준)", expanded=False):
     # Base currency hardcoded to KRW mostly, or check bs['base_currency']
-    base_cur = bs.get("base_currency", "KRW")
     c1, c2, c3 = st.columns(3)
     c1.metric("총 자산 (Book Value)", format_currency(total_book_value_base, base_cur))
     c2.metric("총 자산 (Valuation)", format_currency(valuation_base_total, base_cur))
@@ -105,6 +113,55 @@ with st.expander("🔍 장부 vs 평가 상세 (KRW 기준)", expanded=False):
         format_currency(unrealized_pnl_base, base_cur),
         delta=format_currency(unrealized_pnl_base, base_cur),
     )
+
+if reconciliation.get("missing_rates"):
+    missing_pairs = ", ".join(
+        f"{base}/{quote}" for base, quote in reconciliation["missing_rates"]
+    )
+    st.warning(f"자산 평가 환율이 없어 일부 자산이 제외되었습니다: {missing_pairs}")
+
+if has_recon_delta:
+    st.warning(
+        "자산 평가 합계와 장부 자산 계정이 불일치합니다. 아래에서 상세를 확인하세요."
+    )
+
+with st.expander("🧾 자산 평가 ↔ 장부 계정 대사", expanded=has_recon_delta):
+    if recon_items:
+        recon_df = pd.DataFrame(
+            [
+                {
+                    "계정": item["account_name"],
+                    "장부금액(Base)": item["book_value_base"],
+                    "평가금액(Base)": item["valuation_value_base"],
+                    "차이(Base)": item["delta_base"],
+                    "자산 수": item["asset_count"],
+                    "평가 입력 수": item["valued_asset_count"],
+                }
+                for item in recon_items
+            ]
+        )
+        st.dataframe(
+            recon_df.style.format(
+                {
+                    "장부금액(Base)": fmt_base,
+                    "평가금액(Base)": fmt_base,
+                    "차이(Base)": fmt_base,
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "장부금액(Base)": st.column_config.NumberColumn(),
+                "평가금액(Base)": st.column_config.NumberColumn(),
+                "차이(Base)": st.column_config.NumberColumn(),
+            },
+        )
+        st.caption(
+            "평가 입력이 없는 자산은 평가 합계에 포함되지 않습니다. "
+            "장부 잔액은 연결된 자산 계정 기준입니다."
+        )
+    else:
+        st.info("등록된 자산이 없습니다.")
 
 st.divider()
 
@@ -131,9 +188,7 @@ liab_df = _prep_df(bs["liabilities"])
 eq_df = _prep_df(bs["equity"])
 
 # Style format strings
-base_cur = bs.get("base_currency", "KRW")
 fmt_disp = get_pandas_style_fmt(display_currency)
-fmt_base = get_pandas_style_fmt(base_cur)
 
 
 def _apply_style(df):

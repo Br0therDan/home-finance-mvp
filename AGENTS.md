@@ -156,6 +156,12 @@ After *any* code changes:
 
 ---
 
+## Asset Valuation ↔ Ledger Mapping Rule
+
+- Each asset (`assets`) maps to exactly one ledger account via `linked_account_id`.
+- `asset_valuations` are informational snapshots and **must not** generate journal entries.
+- The dashboard reconciles valuation totals against the linked asset account balances to surface discrepancies.
+
 ## How to Add Features Safely
 
 ### When adding a new “Transaction Type”
