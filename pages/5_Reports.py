@@ -12,6 +12,7 @@ from core.services.ledger_service import (
     income_statement,
     monthly_cashflow,
 )
+from core.services.settings_service import get_base_currency
 from ui.utils import format_currency, get_currency_config, get_pandas_style_fmt
 
 st.set_page_config(page_title="Reports", page_icon="📈", layout="wide")
@@ -100,8 +101,7 @@ with col2:
     end = st.date_input("종료일", value=as_of, key="is_end")
 
 is_ = income_statement(session, start=start, end=end)
-# IS usually reports in Base Currency (KRW)
-base_currency = "KRW"
+base_currency = get_base_currency(session)
 base_cfg = get_currency_config(base_currency)
 fmt_base = get_pandas_style_fmt(base_currency)
 

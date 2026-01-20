@@ -38,6 +38,7 @@
 - 외화 계정(USD/JPY 등) 생성 및 거래 입력
 - 거래 시점 환율(**Snapshot FX**) 자동 기록
 - **장부 가액(Book Value)** vs **평가 가치(Current Value)** 비교 리포트
+- 손익계산서(IS) 및 현금흐름(Cashflow)은 기준 통화 설정을 따름
 - 수동 환율(Manual FX) 관리
 
 ### Day0 기초 잔액 설정

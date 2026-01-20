@@ -19,6 +19,7 @@ A household finance & asset management MVP built with:
   - Day0 Opening Balance input → auto-generated opening balance journal entry
   - Ledger browsing + trial balance
   - Reports: BS (Balance Sheet), IS (Income Statement), Cashflow (simple; cash-equivalent account name filter)
+  - IS/Cashflow reports follow the configured base currency (default KRW)
   - Asset register + valuation history
   - Settings: Chart of Accounts (CoA)
 
